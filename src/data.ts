@@ -1,6 +1,7 @@
 import type { Course, Recommendation } from "./types";
 
 export const courses: Course[] = [
+  { id: "algebra", code: "NMAT31102", name: "College Algebra", category: "Mathematics", progress: 28, mastery: 57, nextTopic: "Add your first lecturer topic", accent: "math" },
   { id: "calc", code: "NMAT32122", name: "Calculus I", category: "Mathematics", progress: 34, mastery: 61, nextTopic: "Add your first lecturer topic", accent: "math" },
   { id: "stats", code: "NBAT32107", name: "Statistics I", category: "Mathematics", progress: 22, mastery: 58, nextTopic: "Add your first lecturer topic", accent: "math" },
   { id: "physics", code: "NPHY31105", name: "Physics I", category: "Physical Sciences", progress: 18, mastery: 54, nextTopic: "Add your first lecturer topic", accent: "physics" },

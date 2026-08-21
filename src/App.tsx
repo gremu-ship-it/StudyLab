@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { BookOpen, Brain, CalendarDays, ChevronRight, ClipboardList, FlaskConical, GraduationCap, LayoutDashboard, Menu, PlayCircle, Plus, Search, Sparkles, Target, Upload, X } from "lucide-react";
+import { BookOpen, Brain, CalendarDays, ChevronRight, ClipboardList, GraduationCap, LayoutDashboard, Menu, PlayCircle, Plus, Search, Sparkles, Target, Upload, X } from "lucide-react";
 import { courses, recommendations } from "./data";
 
 type Page = "dashboard" | "courses" | "study" | "inbox";
@@ -90,7 +90,7 @@ function Dashboard({ onNavigate, onAddTopic }: { onNavigate: (p: Page) => void; 
     <section className="page">
       <div className="hero">
         <div>
-          <span className="eyebrow">THURSDAY • 20 AUGUST 2026</span>
+          <span className="eyebrow">{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).toUpperCase()}</span>
           <h1>Good afternoon 👋</h1>
           <p>Your learning engine is ready. Tell StudyLab what you are learning next.</p>
           <div className="hero-actions"><button className="primary" onClick={() => onNavigate("study")}><PlayCircle size={17}/> Start 45-min session</button><button className="secondary" onClick={onAddTopic}><Plus size={17}/> Add today's topic</button></div>
