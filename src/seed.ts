@@ -38,19 +38,19 @@ function addTopic(
   data.topics.push({
     id: tid, course_id: courseId, name, description, sequence_number: topicSeq, status,
     source_type: status === "student_added" ? "student" : "curriculum", source_reference: null,
-    estimated_minutes: 120,
+    estimated_minutes: 120, created_by: null,
   });
   skillIds.forEach((sid) => data.topic_skills.push({ topic_id: tid, skill_id: sid, importance: 1 }));
 
   subtopics.forEach((sub, si) => {
     const subId = `s-${tid}-${si + 1}`;
-    data.subtopics.push({ id: subId, topic_id: tid, name: sub.name, description: null, sequence_number: si + 1, status: "active" });
+    data.subtopics.push({ id: subId, topic_id: tid, name: sub.name, description: null, sequence_number: si + 1, status: "active", created_by: null });
 
     sub.units.forEach((u, ui) => {
       data.learning_units.push({
         id: `lu-${tid}-${si + 1}-${ui + 1}`, topic_id: tid, subtopic_id: subId, title: u.title,
         unit_type: u.type, sequence_number: ui + 1, description: u.body.slice(0, 120), body: u.body,
-        estimated_minutes: u.mins, difficulty: u.diff ?? 2, status: "approved",
+        estimated_minutes: u.mins, difficulty: u.diff ?? 2, status: "approved", created_by: null,
       });
     });
 
@@ -64,12 +64,12 @@ function addTopic(
       data.questions.push({
         id: qid, topic_id: tid, subtopic_id: subId, question_type: qType, difficulty: q.diff ?? 2,
         question_text: q.text, explanation: q.explain, hint_1: q.hint ?? null, hint_2: null,
-        correct_answer: correct, estimated_seconds: 90, status: "approved",
+        correct_answer: correct, estimated_seconds: 90, status: "approved", created_by: null,
       });
       q.options?.forEach((otext, oi) => {
         data.question_options.push({
           id: `qo-${qid}-${oi + 1}`, question_id: qid,
-          option_key: String.fromCharCode(65 + oi), option_text: otext, sequence_number: oi + 1,
+          option_key: String.fromCharCode(65 + oi), option_text: otext, sequence_number: oi + 1, created_by: null,
         });
       });
     });
@@ -81,12 +81,12 @@ function addTopic(
         background: description, materials: ["Lab notebook", "Apparatus as listed", "PPE"],
         safety_notes: "Wear a lab coat and safety glasses. Follow demonstrator instructions.",
         expected_outcome: "Recorded observations consistent with the theory.",
-        assessment_notes: "Submit a written report including data, analysis and conclusion.", status: "approved",
+        assessment_notes: "Submit a written report including data, analysis and conclusion.", status: "approved", created_by: null,
       });
       sub.practical.steps.forEach((instr, pi) =>
         data.practical_steps.push({
           id: `ps-${pid}-${pi + 1}`, practical_id: pid, step_number: pi + 1,
-          instruction: instr, expected_action: null, observation_prompt: "Record your observation.",
+          instruction: instr, expected_action: null, observation_prompt: "Record your observation.", created_by: null,
         })
       );
     }
@@ -97,7 +97,7 @@ function addTopic(
     data.content_resources.push({
       id: rid, title: r.title, description: null, resource_type: r.type, url: r.url ?? null,
       provider: r.provider ?? null, author: null,
-      duration_seconds: r.type === "youtube" ? 720 : null, difficulty: 2, status: "active", source_type: "curated",
+      duration_seconds: r.type === "youtube" ? 720 : null, difficulty: 2, status: "active", source_type: "curated", created_by: null,
     });
     data.topic_resources.push({ topic_id: tid, resource_id: rid, relationship_type: "supports", sequence_number: ri + 1 });
   });
@@ -461,7 +461,7 @@ const skillDefs: [string, string, string][] = [
   ["sk-ml", "Machine learning basics", "conceptual"], ["sk-supply", "Supply & demand analysis", "conceptual"],
   ["sk-prob", "Probability reasoning", "procedural"], ["sk-soilph", "Soil pH measurement", "practical"],
 ];
-skillDefs.forEach(([sid, name, st]) => data.skills.push({ id: sid, name, description: null, skill_type: st }));
+skillDefs.forEach(([sid, name, st]) => data.skills.push({ id: sid, name, description: null, skill_type: st, created_by: null }));
 
 /* ---------------- Student profile + provisioning ----------------
    provisionStudentProgramme() sets up enrolments, course enrolments,
@@ -470,10 +470,11 @@ skillDefs.forEach(([sid, name, st]) => data.skills.push({ id: sid, name, descrip
    student switches institution/programme, so the app is fully
    multi-institution rather than hard-wired to LUANAR. */
 
-export function provisionStudentProgramme(db: Database, studentId: string, programmeId: string, year = 2, semester: 1 | 2 = 1) {
+export function provisionStudentProgramme(db: Database, studentId: string, programmeId: string, year = 2, semester: 1 | 2 = 1, planIdArg?: string) {
   const period = db.academic_periods.find((p) => p.programme_id === programmeId && p.status === "active")
     ?? db.academic_periods.find((p) => p.programme_id === programmeId);
   if (!period) return;
+  const planId = planIdArg ?? db.study_plans.find((p) => p.student_id === studentId && p.status === "active")?.id ?? "plan-today";
 
   // Clear student-scoped data so the new programme starts clean.
   db.enrolments = db.enrolments.filter((e) => e.student_id !== studentId);
@@ -483,7 +484,7 @@ export function provisionStudentProgramme(db: Database, studentId: string, progr
   db.skill_mastery = db.skill_mastery.filter((e) => e.student_id !== studentId);
   db.review_schedule = db.review_schedule.filter((e) => e.student_id !== studentId);
   db.recommendations = db.recommendations.filter((e) => e.student_id !== studentId);
-  db.study_plan_items = db.study_plan_items.filter((i) => i.study_plan_id !== "plan-today");
+  db.study_plan_items = db.study_plan_items.filter((i) => i.study_plan_id !== planId);
 
   // Programme + course enrolments.
   db.enrolments.push({ id: `enr-${programmeId}`, student_id: studentId, programme_id: programmeId, academic_period_id: period.id, status: "active", started_at: now, ended_at: null });
@@ -535,7 +536,7 @@ export function provisionStudentProgramme(db: Database, studentId: string, progr
   planItems.forEach((t, i) => {
     const course = db.courses.find((c) => c.id === t.course_id)!;
     db.study_plan_items.push({
-      id: `spi-${i + 1}`, study_plan_id: "plan-today", topic_id: t.id,
+      id: `spi-${i + 1}`, study_plan_id: planId, topic_id: t.id,
       title: `${t.name} — ${["quick revision", "practice set", "worked problems", "overview"][i]}`,
       scheduled_date: today, planned_minutes: [10, 15, 15, 5][i], sequence_number: i + 1, status: "planned",
     });

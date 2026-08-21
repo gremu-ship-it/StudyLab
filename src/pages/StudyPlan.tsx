@@ -9,7 +9,7 @@ export function StudyPlanPage({ nav }: { nav: NavFn }) {
   const db = useStore((d) => d);
   const sid = store.studentId;
   const [showAdd, setShowAdd] = useState(false);
-  const plan = db.study_plans[0];
+  const plan = db.study_plans.find((p) => p.student_id === sid && p.status === "active") ?? db.study_plans[0];
   const items = db.study_plan_items.filter((i) => i.study_plan_id === plan?.id).sort((a, b) => a.sequence_number - b.sequence_number);
   const sessions = db.study_sessions.slice(0, 6);
 

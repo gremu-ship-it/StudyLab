@@ -6,7 +6,8 @@ import type {
 } from "./types";
 
 const STORAGE_KEY = "studylab.db.v2";
-const STUDENT_ID = "student-1";
+const DEMO_STUDENT_ID = "student-1";
+let currentStudentId = DEMO_STUDENT_ID;
 
 type Listener = () => void;
 
@@ -28,7 +29,16 @@ function load(): Database {
   return deepClone(seed);
 }
 
+export type DataMode = "demo" | "live";
+
+type RemoteHooks = {
+  upsert?: (table: string, row: unknown) => void;
+  remove?: (table: string, id: string) => void;
+};
+
 let state: Database = load();
+let mode: DataMode = "demo";
+let remote: RemoteHooks = {};
 const listeners = new Set<Listener>();
 
 function persist() {
@@ -44,37 +54,65 @@ function emit() {
   listeners.forEach((l) => l());
 }
 
-export const uid = (prefix = "id"): UUID =>
-  `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+export const uid = (prefix = "id"): UUID => {
+  // In live (Supabase) mode, primary keys are uuid columns, so generate valid UUIDs.
+  if (mode === "live" && typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+};
+
+/** Push a freshly created row to the configured remote (no-op in demo mode). */
+function sync(table: string, row: unknown) {
+  remote.upsert?.(table, row);
+}
 
 export const store = {
   get: () => state,
+  getMode: () => mode,
   subscribe(l: Listener) {
     listeners.add(l);
     return () => listeners.delete(l);
   },
-  reset() {
-    state = deepClone(seed);
+  /** Replace the entire in-memory database (used when hydrating from Supabase). */
+  replace(next: Database, nextMode: DataMode = "live") {
+    state = next;
+    mode = nextMode;
+    persist();
     emit();
   },
-  studentId: STUDENT_ID,
+  setRemote(hooks: RemoteHooks) { remote = hooks; },
+  setStudentId(id: string) { currentStudentId = id; },
+  setMode(m: DataMode) { mode = m; emit(); },
+  reset() {
+    state = deepClone(seed);
+    mode = "demo";
+    currentStudentId = DEMO_STUDENT_ID;
+    emit();
+  },
+  studentId: currentStudentId,
 
   // ---- generic helpers ----
   insert<K extends keyof Database>(table: K, row: Database[K][number]) {
     (state[table] as unknown[]).unshift(row as unknown);
     emit();
+    remote.upsert?.(table as string, row);
   },
   update<K extends keyof Database>(table: K, id: UUID, patch: Partial<Database[K][number]>) {
     const rows = state[table] as unknown as Array<{ id: UUID }>;
     const row = rows.find((r) => r.id === id);
-    if (row) Object.assign(row, patch);
-    emit();
+    if (row) {
+      Object.assign(row, patch);
+      emit();
+      remote.upsert?.(table as string, row);
+    }
   },
   remove<K extends keyof Database>(table: K, id: UUID) {
     (state[table] as unknown as { id: UUID }[]) = (state[table] as unknown as { id: UUID }[]).filter(
       (r) => r.id !== id
     );
     emit();
+    remote.remove?.(table as string, id);
   },
 
   // ---- curriculum inbox ----
@@ -83,43 +121,54 @@ export const store = {
     const topic: Topic = {
       id: uid("t"), course_id: courseId, name, description, sequence_number: seq,
       status: "student_added", source_type: "student", source_reference: null, estimated_minutes: 60,
+      created_by: mode === "live" ? currentStudentId : null,
     };
     state.topics.push(topic);
-    state.topic_mastery.push({
-      id: uid("tm"), student_id: STUDENT_ID, topic_id: topic.id, mastery_score: 0,
-      mastery_level: "not_started", confidence_score: 0, attempt_count: 0,
+    const tm = {
+      id: uid("tm"), student_id: currentStudentId, topic_id: topic.id, mastery_score: 0,
+      mastery_level: "not_started" as const, confidence_score: 0, attempt_count: 0,
       last_practiced_at: null, last_assessed_at: null, next_review_at: null,
-    });
+    };
+    state.topic_mastery.push(tm);
     emit();
+    sync("topics", topic);
+    sync("topic_mastery", tm);
     return topic;
   },
 
   addSubtopic(topicId: UUID, name: string, description = "") {
     const seq = state.subtopics.filter((s) => s.topic_id === topicId).length + 1;
-    state.subtopics.push({
-      id: uid("s"), topic_id: topicId, name, description, sequence_number: seq, status: "active",
-    });
+    const sub = {
+      id: uid("s"), topic_id: topicId, name, description, sequence_number: seq, status: "active" as const,
+      created_by: mode === "live" ? currentStudentId : null,
+    };
+    state.subtopics.push(sub);
     emit();
+    sync("subtopics", sub);
   },
 
   addLearningUnit(topicId: UUID, subtopicId: UUID | null, title: string, body: string, unit_type: import("./types").UnitType) {
     const seq = state.learning_units.filter((u) => u.topic_id === topicId).length + 1;
-    state.learning_units.push({
+    const lu = {
       id: uid("lu"), topic_id: topicId, subtopic_id: subtopicId, title, unit_type,
       sequence_number: seq, description: body.slice(0, 120), body,
-      estimated_minutes: 8, difficulty: 2, status: "approved",
-    });
+      estimated_minutes: 8, difficulty: 2, status: "approved" as const,
+      created_by: mode === "live" ? currentStudentId : null,
+    };
+    state.learning_units.push(lu);
     emit();
+    sync("learning_units", lu);
   },
 
   // ---- study sessions / attempts ----
   startSession(session_type: StudySession["session_type"], topicId: UUID | null, note: string | null): UUID {
     const s: StudySession = {
-      id: uid("sess"), student_id: STUDENT_ID, started_at: new Date().toISOString(),
+      id: uid("sess"), student_id: currentStudentId, started_at: new Date().toISOString(),
       ended_at: null, duration_seconds: null, session_type, topic_id: topicId, note,
     };
     state.study_sessions.unshift(s);
     emit();
+    sync("study_sessions", s);
     return s.id;
   },
   endSession(sessionId: UUID) {
@@ -131,7 +180,7 @@ export const store = {
   },
   recordLearningAttempt(unitId: UUID, sessionId: UUID | null, percent: number) {
     const a: LearningAttempt = {
-      id: uid("la"), student_id: STUDENT_ID, learning_unit_id: unitId, study_session_id: sessionId,
+      id: uid("la"), student_id: currentStudentId, learning_unit_id: unitId, study_session_id: sessionId,
       started_at: new Date().toISOString(), completed_at: new Date().toISOString(),
       completion_percent: percent,
     };
@@ -139,10 +188,11 @@ export const store = {
     const unit = state.learning_units.find((u) => u.id === unitId);
     if (unit) this.touchTopicMastery(unit.topic_id, percent, false);
     emit();
+    sync("learning_attempts", a);
   },
   recordQuestionAttempt(qId: UUID, sessionId: UUID | null, answer: unknown, correct: boolean, seconds: number, confidence: number | null = null) {
     const a: QuestionAttempt = {
-      id: uid("qa"), student_id: STUDENT_ID, question_id: qId, study_session_id: sessionId,
+      id: uid("qa"), student_id: currentStudentId, question_id: qId, study_session_id: sessionId,
       answer, is_correct: correct, score: correct ? 100 : 0, time_seconds: seconds,
       confidence, hints_used: 0, attempted_at: new Date().toISOString(),
     };
@@ -150,12 +200,13 @@ export const store = {
     const q = state.questions.find((x) => x.id === qId);
     if (q) this.touchTopicMastery(q.topic_id, correct ? 100 : 30, true);
     emit();
+    sync("question_attempts", a);
   },
 
   // ---- mastery + spaced repetition (SM-2 inspired) ----
   touchTopicMastery(topicId: UUID, performance: number, assessed: boolean) {
     const m = state.topic_mastery.find(
-      (x) => x.student_id === STUDENT_ID && x.topic_id === topicId
+      (x) => x.student_id === currentStudentId && x.topic_id === topicId
     );
     if (!m) return;
     const prev = m.mastery_score;
@@ -170,11 +221,11 @@ export const store = {
 
     // Schedule / update review.
     let rev = state.review_schedule.find(
-      (r) => r.student_id === STUDENT_ID && r.topic_id === topicId && r.status === "scheduled"
+      (r) => r.student_id === currentStudentId && r.topic_id === topicId && r.status === "scheduled"
     );
     if (!rev) {
       rev = {
-        id: uid("rev"), student_id: STUDENT_ID, topic_id: topicId,
+        id: uid("rev"), student_id: currentStudentId, topic_id: topicId,
         scheduled_for: new Date().toISOString(), interval_days: 1, ease_factor: 2.5,
         status: "scheduled", last_result: null,
       };
@@ -195,17 +246,20 @@ export const store = {
     const skills = state.topic_skills.filter((ts) => ts.topic_id === topicId);
     skills.forEach((ts) => {
       let sm = state.skill_mastery.find(
-        (x) => x.student_id === STUDENT_ID && x.skill_id === ts.skill_id
+        (x) => x.student_id === currentStudentId && x.skill_id === ts.skill_id
       );
       if (!sm) {
-        sm = { id: uid("sm"), student_id: STUDENT_ID, skill_id: ts.skill_id, mastery_score: 0, confidence_score: 0, attempt_count: 0, last_assessed_at: null };
+        sm = { id: uid("sm"), student_id: currentStudentId, skill_id: ts.skill_id, mastery_score: 0, confidence_score: 0, attempt_count: 0, last_assessed_at: null };
         state.skill_mastery.push(sm);
       }
       sm.mastery_score = Math.round(sm.mastery_score * 0.7 + performance * 0.3 * ts.importance);
       sm.confidence_score = Math.round(sm.confidence_score * 0.6 + (performance - 10) * 0.4);
       sm.attempt_count += 1;
       sm.last_assessed_at = new Date().toISOString();
+      sync("skill_mastery", sm);
     });
+    sync("topic_mastery", m);
+    sync("review_schedule", rev);
   },
 
   completeReview(reviewId: UUID) {
@@ -235,13 +289,15 @@ export const store = {
   uploadMaterial(file: File, courseId: UUID | null, topicId: UUID | null) {
     const reader = new FileReader();
     const id = uid("um");
-    state.uploaded_materials.unshift({
-      id, student_id: STUDENT_ID, course_id: courseId, topic_id: topicId, file_name: file.name,
-      storage_path: `${STUDENT_ID}/${file.name}`, mime_type: file.type || "application/octet-stream",
-      file_size: file.size, processing_status: "processing", extracted_text: null,
+    const upload = {
+      id, student_id: currentStudentId, course_id: courseId, topic_id: topicId, file_name: file.name,
+      storage_path: `${currentStudentId}/${file.name}`, mime_type: file.type || "application/octet-stream",
+      file_size: file.size, processing_status: "processing" as const, extracted_text: null,
       ai_classification: null, created_at: new Date().toISOString(),
-    });
+    };
+    state.uploaded_materials.unshift(upload);
     emit();
+    sync("uploaded_materials", upload);
     reader.onload = () => {
       const text = typeof reader.result === "string" ? reader.result.slice(0, 4000) : null;
       const lower = (text ?? file.name).toLowerCase();
@@ -258,6 +314,7 @@ export const store = {
         row.extracted_text = text ?? "Text extraction not available for this file type.";
         row.ai_classification = { suggested_topic: guess, confidence: 0.86, course: course?.name ?? null };
         emit();
+        sync("uploaded_materials", row);
       }
     };
     reader.onerror = () => {
@@ -270,35 +327,49 @@ export const store = {
 
   // ---- multi-institution / programme provisioning ----
   setupStudent(fullName: string, institutionId: UUID, programmeId: UUID, year: number, semester: 1 | 2) {
-    let profile = state.student_profiles.find((s) => s.id === STUDENT_ID);
+    let profile = state.student_profiles.find((s) => s.id === currentStudentId);
     if (!profile) {
       profile = {
-        id: STUDENT_ID, full_name: fullName, institution_id: institutionId, programme_id: programmeId,
+        id: currentStudentId, full_name: fullName, institution_id: institutionId, programme_id: programmeId,
         current_year: year, current_semester: semester, timezone: "Africa/Blantyre",
         study_preferences: { daily_target_minutes: 60 },
       };
       state.student_profiles.push(profile);
+      sync("student_profiles", profile);
     } else {
       profile.full_name = fullName;
       profile.institution_id = institutionId;
       profile.programme_id = programmeId;
       profile.current_year = year;
       profile.current_semester = semester;
+      sync("student_profiles", profile);
     }
     // Make sure an active plan exists.
-    if (!state.study_plans.some((p) => p.id === "plan-today")) {
+    let planId = state.study_plans.find((p) => p.student_id === currentStudentId && p.status === "active")?.id;
+    if (!planId) {
       const todayStr = new Date().toISOString().slice(0, 10);
-      state.study_plans.push({
-        id: "plan-today", student_id: STUDENT_ID, name: "Today's adaptive plan",
-        start_date: todayStr, end_date: todayStr, target_minutes: 45, status: "active",
-      });
+      const plan = {
+        id: uid("plan"), student_id: currentStudentId, name: "Today's adaptive plan",
+        start_date: todayStr, end_date: todayStr, target_minutes: 45, status: "active" as const,
+      };
+      state.study_plans.push(plan);
+      sync("study_plans", plan);
+      planId = plan.id;
     }
-    provisionStudentProgramme(state, STUDENT_ID, programmeId, year, semester);
+    provisionStudentProgramme(state, currentStudentId, programmeId, year, semester, planId);
+    // Sync the rows provisionStudentProgramme created.
+    sync("enrolments", state.enrolments.find((e) => e.student_id === currentStudentId));
+    state.student_course_enrolments.filter((e) => e.student_id === currentStudentId).forEach((r) => sync("student_course_enrolments", r));
+    state.topic_mastery.filter((r) => r.student_id === currentStudentId).forEach((r) => sync("topic_mastery", r));
+    state.review_schedule.filter((r) => r.student_id === currentStudentId).forEach((r) => sync("review_schedule", r));
+    state.recommendations.filter((r) => r.student_id === currentStudentId).forEach((r) => sync("recommendations", r));
+    state.study_plan_items.filter((r) => r.study_plan_id === planId).forEach((r) => sync("study_plan_items", r));
+    state.study_sessions.filter((r) => r.student_id === currentStudentId).forEach((r) => sync("study_sessions", r));
     emit();
   },
 
   switchStudentProgramme(programmeId: UUID, year: number, semester: 1 | 2) {
-    const profile = state.student_profiles.find((s) => s.id === STUDENT_ID);
+    const profile = state.student_profiles.find((s) => s.id === currentStudentId);
     if (!profile) return;
     const programme = state.programmes.find((p) => p.id === programmeId);
     if (!programme) return;
@@ -306,7 +377,26 @@ export const store = {
     profile.institution_id = programme.institution_id;
     profile.current_year = year;
     profile.current_semester = semester;
-    provisionStudentProgramme(state, STUDENT_ID, programmeId, year, semester);
+    let planId = state.study_plans.find((p) => p.student_id === currentStudentId && p.status === "active")?.id;
+    if (!planId) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const plan = {
+        id: uid("plan"), student_id: currentStudentId, name: "Today's adaptive plan",
+        start_date: todayStr, end_date: todayStr, target_minutes: 45, status: "active" as const,
+      };
+      state.study_plans.push(plan);
+      sync("study_plans", plan);
+      planId = plan.id;
+    }
+    provisionStudentProgramme(state, currentStudentId, programmeId, year, semester, planId);
+    sync("student_profiles", profile);
+    sync("enrolments", state.enrolments.find((e) => e.student_id === currentStudentId));
+    state.student_course_enrolments.filter((e) => e.student_id === currentStudentId).forEach((r) => sync("student_course_enrolments", r));
+    state.topic_mastery.filter((r) => r.student_id === currentStudentId).forEach((r) => sync("topic_mastery", r));
+    state.review_schedule.filter((r) => r.student_id === currentStudentId).forEach((r) => sync("review_schedule", r));
+    state.recommendations.filter((r) => r.student_id === currentStudentId).forEach((r) => sync("recommendations", r));
+    state.study_plan_items.filter((r) => r.study_plan_id === planId).forEach((r) => sync("study_plan_items", r));
+    state.study_sessions.filter((r) => r.student_id === currentStudentId).forEach((r) => sync("study_sessions", r));
     emit();
   },
 
@@ -317,6 +407,7 @@ export const store = {
     };
     state.institutions.push(inst);
     emit();
+    sync("institutions", inst);
     return inst;
   },
 
@@ -326,13 +417,15 @@ export const store = {
       description: description || null, duration_years: durationYears, is_active: true,
     };
     state.programmes.push(prog);
-    // An active academic period is required to offer courses.
     const year = new Date().getFullYear();
-    state.academic_periods.push({
-      id: uid("ap"), programme_id: prog.id, academic_year: year, year_level: 1, semester: 1,
-      name: `Year 1 Semester 1`, start_date: `${year}-08-01`, end_date: `${year}-12-15`, status: "active",
-    });
+    const period = {
+      id: uid("ap"), programme_id: prog.id, academic_year: year, year_level: 1, semester: 1 as 1 | 2,
+      name: `Year 1 Semester 1`, start_date: `${year}-08-01`, end_date: `${year}-12-15`, status: "active" as const,
+    };
+    state.academic_periods.push(period);
     emit();
+    sync("programmes", prog);
+    sync("academic_periods", period);
     return prog;
   },
 
@@ -342,22 +435,27 @@ export const store = {
       provider: resourceType === "youtube" ? "YouTube" : null, author: null,
       duration_seconds: resourceType === "youtube" ? 600 : null, difficulty: 2,
       status: "active", source_type: "student",
+      created_by: mode === "live" ? currentStudentId : null,
     };
     const seq = state.topic_resources.filter((tr) => tr.topic_id === topicId).length + 1;
+    const link = { topic_id: topicId, resource_id: resource.id, relationship_type: "supports", sequence_number: seq };
     state.content_resources.push(resource);
-    state.topic_resources.push({ topic_id: topicId, resource_id: resource.id, relationship_type: "supports", sequence_number: seq });
+    state.topic_resources.push(link);
     emit();
+    sync("content_resources", resource);
+    sync("topic_resources", link);
     return resource;
   },
 
   // ---- AI conversations ----
   startConversation(courseId: UUID | null, topicId: UUID | null, mode: AIConversation["mode"], title: string): UUID {
     const conv: AIConversation = {
-      id: uid("conv"), student_id: STUDENT_ID, course_id: courseId, topic_id: topicId,
+      id: uid("conv"), student_id: currentStudentId, course_id: courseId, topic_id: topicId,
       mode, title, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     };
     state.ai_conversations.unshift(conv);
     emit();
+    sync("ai_conversations", conv);
     return conv.id;
   },
   sendMessage(conversationId: UUID, content: string): AIMessage {
@@ -376,6 +474,9 @@ export const store = {
     state.ai_messages.push(aiMsg);
     conv.updated_at = aiMsg.created_at;
     emit();
+    sync("ai_messages", userMsg);
+    sync("ai_messages", aiMsg);
+    sync("ai_conversations", conv);
     return aiMsg;
   },
 };

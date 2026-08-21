@@ -6,8 +6,12 @@ import {
 } from "lucide-react";
 import { useStore, store } from "./store";
 import { useStudent } from "./student";
-import { ToastHost, initials } from "./components/ui";
+import { ToastHost, initials, toast } from "./components/ui";
 import { SetupModal } from "./components/SetupModal";
+import { AuthScreen } from "./components/Auth";
+import { ModeBadge } from "./components/ModeBadge";
+import { isSupabaseConfigured, supabase } from "./lib/supabase";
+import { hydrateFromSupabase, onAuthChange, signOut, upsertRow, deleteRow } from "./lib/live";
 import { Dashboard } from "./pages/Dashboard";
 import { CoursesPage } from "./pages/Courses";
 import { CoursePage } from "./pages/CoursePage";
@@ -44,8 +48,56 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const student = useStore((db) => db.student_profiles[0]);
-  const [setupOpen, setSetupOpen] = useState<"setup" | "switch" | null>(!student ? "setup" : null);
+  const [setupOpen, setSetupOpen] = useState<"setup" | "switch" | null>(null);
   const ctx = useStudent();
+
+  // ----- Auth / live-data bootstrap -----
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
+  const [bootstrapped, setBootstrapped] = useState(!isSupabaseConfigured);
+  const [hydrating, setHydrating] = useState(false);
+  const [wantDemo, setWantDemo] = useState(false);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    const unsub = onAuthChange(async (uid) => {
+      setAuthUserId(uid);
+      if (!uid) {
+        store.reset();
+        setBootstrapped(true);
+        return;
+      }
+      store.setStudentId(uid);
+      store.setRemote({
+        upsert: (table, row) => upsertRow(table as never, row),
+        remove: (table, id) => deleteRow(table as never, id),
+      });
+      setHydrating(true);
+      try {
+        const db = await hydrateFromSupabase();
+        const hasStudent = db.student_profiles.some((p) => p.id === uid);
+        store.replace(db, "live");
+        store.setStudentId(uid);
+        if (!hasStudent) {
+          // First sign-in: provision a demo profile/curriculum tied to this user.
+          const { data: sess } = await supabase!.auth.getSession();
+          store.setupStudent(
+            (sess.session?.user.user_metadata?.full_name as string) || "Student",
+            "inst-luanar", "prog-nas", 2, 1
+          );
+        }
+      } catch (e) {
+        console.error(e);
+        toast("Could not load cloud data — showing demo", "info");
+      } finally {
+        setHydrating(false);
+        setBootstrapped(true);
+      }
+    });
+    return unsub;
+  }, []);
+
+  const signedIn = Boolean(authUserId);
+  const showAuthGate = isSupabaseConfigured && bootstrapped && !signedIn && !wantDemo;
 
   const nav: NavFn = (r) => {
     setRoute(r);
@@ -76,6 +128,27 @@ export default function App() {
   }, [route.name]);
 
   useEffect(() => { document.title = `StudyLab · ${pageTitle}`; }, [pageTitle]);
+
+  if (!bootstrapped || hydrating) {
+    return (
+      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}>
+        <div style={{ textAlign: "center" }}>
+          <div className="brand-mark" style={{ margin: "0 auto 14px", width: 48, height: 48, borderRadius: 14 }}><GraduationCap size={24} /></div>
+          <p className="muted">{hydrating ? "Syncing your workspace…" : "Loading StudyLab…"}</p>
+        </div>
+        <ToastHost />
+      </div>
+    );
+  }
+
+  if (showAuthGate) {
+    return (
+      <>
+        <AuthScreen onContinueDemo={() => setWantDemo(true)} />
+        <ToastHost />
+      </>
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -139,6 +212,7 @@ export default function App() {
           </div>
           <button className="icon-btn" onClick={() => nav({ name: "mastery" })} title="Mastery"><Brain size={19} /></button>
           <button className="icon-btn" onClick={() => nav({ name: "practicals" })} title="Practicals"><Microscope size={19} /></button>
+          <ModeBadge onSignOut={signedIn ? () => signOut() : undefined} />
           <button className="icon-btn" onClick={() => nav({ name: "profile" })} title="Profile"><UserCircle size={20} /></button>
         </header>
 

@@ -19,7 +19,8 @@ export function Dashboard({ nav }: { nav: NavFn }) {
   ).length;
   const studentAdded = topics.filter((t) => t.status === "student_added").length;
   const recs = db.recommendations.filter((r) => r.student_id === sid && r.status === "active").sort((a, b) => b.priority - a.priority);
-  const planItems = db.study_plan_items.filter((i) => i.study_plan_id === "plan-today");
+  const activePlan = db.study_plans.find((p) => p.student_id === sid && p.status === "active");
+  const planItems = db.study_plan_items.filter((i) => i.study_plan_id === activePlan?.id);
   const completedToday = planItems.filter((i) => i.status === "completed").length;
 
   const priorityLabel = (p: number) => (p >= 85 ? "High" : p >= 65 ? "Medium" : "Low");

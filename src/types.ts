@@ -68,6 +68,7 @@ export interface Topic {
   source_type: string | null;
   source_reference: string | null;
   estimated_minutes: number | null;
+  created_by: UUID | null;
 }
 
 export interface Subtopic {
@@ -77,6 +78,7 @@ export interface Subtopic {
   description: string | null;
   sequence_number: number | null;
   status: "draft" | "active" | "archived";
+  created_by: UUID | null;
 }
 
 export interface Skill {
@@ -84,6 +86,7 @@ export interface Skill {
   name: string;
   description: string | null;
   skill_type: string | null;
+  created_by: UUID | null;
 }
 
 export interface TopicSkill {
@@ -114,6 +117,7 @@ export interface LearningUnit {
   estimated_minutes: number | null;
   difficulty: number | null;
   status: "draft" | "review" | "approved" | "archived";
+  created_by: UUID | null;
 }
 
 export type ResourceType =
@@ -137,6 +141,7 @@ export interface ContentResource {
   difficulty: number | null;
   status: "draft" | "active" | "unavailable" | "archived";
   source_type: string | null;
+  created_by: UUID | null;
 }
 
 export interface TopicResource {
@@ -167,6 +172,7 @@ export interface Question {
   correct_answer: { key?: string; value?: string; number?: number };
   estimated_seconds: number | null;
   status: "draft" | "review" | "approved" | "retired";
+  created_by: UUID | null;
 }
 
 export interface QuestionOption {
@@ -175,6 +181,7 @@ export interface QuestionOption {
   option_key: string;
   option_text: string;
   sequence_number: number;
+  created_by: UUID | null;
 }
 
 export interface Practical {
@@ -188,6 +195,7 @@ export interface Practical {
   expected_outcome: string | null;
   assessment_notes: string | null;
   status: "draft" | "review" | "approved" | "archived";
+  created_by: UUID | null;
 }
 
 export interface PracticalStep {
@@ -197,6 +205,7 @@ export interface PracticalStep {
   instruction: string;
   expected_action: string | null;
   observation_prompt: string | null;
+  created_by: UUID | null;
 }
 
 export interface StudentProfile {

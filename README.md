@@ -14,7 +14,12 @@ cp .env.example .env      # add VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY when 
 npm run dev
 ```
 
-The app runs fully in the browser with a realistic LUANAR seed (institutions, programmes, 14 courses, 18 topics, learning units, questions, practicals, resources, recommendations and a study plan). All progress — topics added, units completed, question attempts, mastery, uploads and AI conversations — is persisted in `localStorage` through a typed data-access layer (`src/store.ts`). The same store methods map directly to the Supabase schema, so swapping the in-browser adapter for Supabase queries is a drop-in change.
+The app runs in **two modes**:
+
+- **Demo mode (default):** no backend needed. A rich multi-institution seed (LUANAR, MUST, UNIMA) with courses, topics, learning units, questions, practicals, video lessons, recommendations and a study plan is loaded into the browser. All progress is persisted in `localStorage` through a typed data-access layer (`src/store.ts`).
+- **Live mode:** when `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set, users sign in (email/password or magic link) and all student-owned data — enrolments, mastery, review schedule, recommendations, study plans, uploads, AI conversations — syncs to Supabase. The same store methods write through to the backend; the UI is unchanged.
+
+A green **"Live · synced"** badge in the top bar confirms cloud sync; a grey **"Demo mode"** badge means local data.
 
 ```bash
 npm run build     # type-check + production build to dist/
@@ -67,11 +72,26 @@ src/
   styles.css        # design system
 ```
 
-## Connecting Supabase (next step)
+## Going live with Supabase
 
-`src/lib/supabase.ts` already exports a Supabase client when `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set. To go live with a real backend:
+The app already includes a Supabase client, auth (email/password + magic link), and a live data sync layer. To enable **Live mode**:
 
-1. Create a Supabase project and run `supabase/migrations/0001_studylab_v0_1.sql` in the SQL editor.
-2. Add your URL and anon key to `.env`.
-3. Replace the in-memory/localStorage methods in `src/store.ts` with the equivalent `supabase.from(...).select/insert/update` calls — the method signatures already match the table shapes.
-4. Add Supabase Auth for `student_profiles.id`; the RLS policies already key off `auth.uid()`.
+1. Create a Supabase project.
+2. In the SQL editor, run both migrations in order:
+   - `supabase/migrations/0001_studylab_v0_1.sql` — schema, RLS, core seed (institutions, programmes, courses).
+   - `supabase/migrations/0002_live_readiness.sql` — columns the expanded app needs (`study_sessions.topic_id/note`, `learning_units.body`, `content_resources.source_type`, `created_by` ownership), and RLS policies letting students manage **their own** topics, units, questions, practicals and resources.
+3. Copy `.env.example` to `.env` and fill in:
+   ```
+   VITE_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
+   VITE_SUPABASE_ANON_KEY=YOUR-ANON-PUBLIC-KEY
+   ```
+4. Restart the dev server. You'll see a sign-in screen; create an account (or use a magic link), and the badge in the top bar will switch to **Live · synced**.
+
+### How the sync works
+
+- `src/lib/supabase.ts` creates the client and lists every table.
+- `src/lib/live.ts` hydrates all rows the signed-in student can see into the store on sign-in, and upserts/deletes rows as the student makes changes.
+- `src/store.ts` is the single state source in both modes; in live mode it generates real UUIDs for new rows and tags student-authored curriculum with `created_by = auth.uid()`, which the RLS policies require.
+- Curriculum tables are shared/read-only for institution-authored content; students can add and manage their own topics, subtopics, units, questions, practicals, skills and resources. Student-owned tables (mastery, review, sessions, uploads, AI chats) are fully private per the policies in 0001.
+
+To populate topics/units/questions for everyone, insert them server-side with `created_by = null` (institution content); students see them automatically. To let students author content in the app, the 0002 policies already allow it.
