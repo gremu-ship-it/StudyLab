@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  BookOpen, Brain, CalendarDays, ClipboardList, FlaskConical, GraduationCap,
-  LayoutDashboard, Menu, MessageSquare, Microscope, Repeat, Search, Sparkles,
+  BookOpen, Brain, Building2, CalendarDays, ChevronRight, ClipboardList, FlaskConical,
+  GraduationCap, LayoutDashboard, Menu, MessageSquare, Microscope, Repeat, Search, Sparkles,
   Target, Upload, UserCircle, X, BarChart3, Library,
 } from "lucide-react";
 import { useStore, store } from "./store";
+import { useStudent } from "./student";
 import { ToastHost, initials } from "./components/ui";
+import { SetupModal } from "./components/SetupModal";
 import { Dashboard } from "./pages/Dashboard";
 import { CoursesPage } from "./pages/Courses";
 import { CoursePage } from "./pages/CoursePage";
@@ -42,6 +44,8 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const student = useStore((db) => db.student_profiles[0]);
+  const [setupOpen, setSetupOpen] = useState<"setup" | "switch" | null>(!student ? "setup" : null);
+  const ctx = useStudent();
 
   const nav: NavFn = (r) => {
     setRoute(r);
@@ -95,13 +99,24 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
+          <button className="mini-card" onClick={() => setSetupOpen("switch")} style={{ textAlign: "left", cursor: "pointer" }}>
+            <Building2 size={18} />
+            <div style={{ minWidth: 0 }}>
+              <strong style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ctx.institution?.short_name ?? "Institution"}</strong>
+              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }}>{ctx.programme?.name ?? "No programme"}</span>
+            </div>
+            <ChevronRight size={15} style={{ marginLeft: "auto", color: "var(--text-mute)" }} />
+          </button>
           <button className="mini-card" onClick={() => nav({ name: "ai" })} style={{ textAlign: "left", cursor: "pointer" }}>
             <Sparkles size={18} />
             <div><strong>AI Tutor</strong><span>Explain • Practise • Review</span></div>
           </button>
           <button className="student-mini" onClick={() => nav({ name: "profile" })} style={{ cursor: "pointer" }}>
             <div className="avatar">{initials(student?.full_name ?? "Student")}</div>
-            <div><strong>{student?.full_name ?? "Student"}</strong><span>Year {student?.current_year} · Semester {student?.current_semester}</span></div>
+            <div style={{ minWidth: 0 }}>
+              <strong style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{student?.full_name ?? "Student"}</strong>
+              <span>Year {student?.current_year} · Semester {student?.current_semester}</span>
+            </div>
           </button>
         </div>
       </aside>
@@ -144,6 +159,7 @@ export default function App() {
         </div>
       </main>
       <ToastHost />
+      <SetupModal open={!!setupOpen} mode={setupOpen ?? "setup"} onClose={() => setSetupOpen(null)} />
     </div>
   );
 }

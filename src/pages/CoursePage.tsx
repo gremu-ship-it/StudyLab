@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import {
-  ArrowLeft, BookOpen, ChevronRight, FileText, FlaskConical, HelpCircle,
-  Library, Link2, ListTree, Plus, Sparkles, Target, Video,
+  ArrowLeft, BookOpen, ChevronRight, ExternalLink, FileText, FlaskConical, Globe,
+  HelpCircle, Library, Link2, ListTree, Play, Plus, Sparkles, Target, Video, X,
 } from "lucide-react";
 import { useStore, store } from "../store";
 import type { NavFn } from "../App";
@@ -117,7 +117,7 @@ export function CoursePage({ courseId, nav }: { courseId: string; nav: NavFn }) 
                 <PracticeSet key={activeTopic.id} questions={questions} courseId={course.id} topicId={activeTopic.id} nav={nav} />
               )}
               {tab === "practicals" && <PracticalsTab practicals={practicals} />}
-              {tab === "resources" && <ResourcesTab resources={resources} />}
+              {tab === "resources" && <ResourcesTab resources={resources} topicId={activeTopic.id} />}
               {tab === "manage" && <StructureTab topicId={activeTopic.id} subtopics={subtopics} unitsCount={units.length} questionsCount={questions.length} />}
             </>
           ) : (
@@ -340,17 +340,149 @@ function PracticalsTab({ practicals }: { practicals: import("../types").Practica
   );
 }
 
-function ResourcesTab({ resources }: { resources: import("../types").ContentResource[] }) {
-  if (!resources.length) return <div className="empty-state"><Link2 size={32} /><h2>No resources linked</h2><p>Curated videos, documents and websites will appear here.</p></div>;
+/** Extract a YouTube video id from watch URLs, shorts URLs and youtu.be links. */
+function youtubeId(url: string): string | null {
+  try {
+    const u = new URL(url);
+    if (u.hostname.includes("youtube.com")) {
+      if (u.pathname.startsWith("/watch")) return u.searchParams.get("v");
+      if (u.pathname.startsWith("/shorts/")) return u.pathname.split("/")[2] ?? null;
+      if (u.pathname.startsWith("/embed/")) return u.pathname.split("/")[2] ?? null;
+    }
+    if (u.hostname === "youtu.be") return u.pathname.slice(1) || null;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+const isPlaylist = (url: string) => /[?&]list=/.test(url);
+
+function ResourcesTab({ resources, topicId }: { resources: import("../types").ContentResource[]; topicId: string }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [title, setTitle] = useState("");
+  const [url, setUrl] = useState("");
+  const [type, setType] = useState<import("../types").ResourceType>("youtube");
+  const [playing, setPlaying] = useState<string | null>(null);
+
+  const videos = resources.filter((r) => r.resource_type === "youtube");
+  const other = resources.filter((r) => r.resource_type !== "youtube");
+
+  function add() {
+    if (!url.trim()) return;
+    const yt = type === "youtube" ? youtubeId(url) : null;
+    if (type === "youtube" && !yt && !isPlaylist(url)) {
+      toast("That doesn't look like a valid YouTube URL", "info");
+      return;
+    }
+    store.addContentResource(topicId, title.trim() || (yt ? "YouTube lesson" : "Resource"), url.trim(), type);
+    setTitle(""); setUrl(""); setShowAdd(false); setType("youtube");
+    toast("Resource added to topic");
+  }
+
   return (
-    <div className="list">
-      {resources.map((r) => (
-        <a key={r.id} href={r.url ?? "#"} target="_blank" rel="noreferrer" className="list-item clickable">
-          <div className="unit-type">{r.resource_type === "youtube" ? <Video size={18} /> : r.resource_type === "document" ? <FileText size={18} /> : <Link2 size={18} />}</div>
-          <div className="grow"><h3>{r.title}</h3><p>{r.provider ?? r.resource_type}{r.duration_seconds ? ` · ${Math.round(r.duration_seconds / 60)} min` : ""}</p></div>
-          <ChevronRight size={16} />
-        </a>
-      ))}
+    <div>
+      <div className="spread" style={{ marginBottom: 14 }}>
+        <div className="row">
+          <span className="chip brand"><Video size={13} /> {videos.length} video lesson{videos.length === 1 ? "" : "s"}</span>
+          {other.length > 0 && <span className="chip muted"><Link2 size={13} /> {other.length} other resource{other.length === 1 ? "" : "s"}</span>}
+        </div>
+        <button className="secondary small" onClick={() => setShowAdd((v) => !v)}>
+          {showAdd ? <X size={14} /> : <Plus size={14} />} {showAdd ? "Cancel" : "Add link"}
+        </button>
+      </div>
+
+      {showAdd && (
+        <div className="panel" style={{ marginBottom: 16, background: "var(--bg-2)" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div className="row" style={{ gap: 8 }}>
+              {([["youtube", "YouTube", <Video key="v" size={14} />], ["website", "Website", <Globe key="w" size={14} />], ["document", "Document", <FileText key="d" size={14} />]] as const).map(([t, label, icon]) => (
+                <button key={t} className={`mode-chip ${type === t ? "active" : ""}`} onClick={() => setType(t)}>{icon} {label}</button>
+              ))}
+            </div>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title (optional)" />
+            <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={type === "youtube" ? "https://www.youtube.com/watch?v=..." : "https://..."} autoFocus />
+            <div className="row" style={{ justifyContent: "flex-end" }}>
+              <button className="primary small" onClick={add}><Link2 size={14} /> Add to lessons</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Inline video player */}
+      {playing && (
+        <div className="panel" style={{ marginBottom: 16, padding: 12, position: "relative" }}>
+          <button className="close" onClick={() => setPlaying(null)} style={{ position: "absolute", top: 10, right: 10, zIndex: 2 }}><X size={16} /></button>
+          <div className="video-frame" style={{ position: "relative", paddingBottom: "56.25%", height: 0, borderRadius: 10, overflow: "hidden", background: "#000" }}>
+            <iframe
+              src={`https://www.youtube.com/embed/${playing}?rel=0&autoplay=1`}
+              title="Lesson video" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen
+            />
+          </div>
+        </div>
+      )}
+
+      {videos.length === 0 && other.length === 0 && !showAdd && (
+        <div className="empty-state">
+          <Video size={32} />
+          <h2>No lessons linked yet</h2>
+          <p>Paste a YouTube link, article or document to give students direct access to lessons for this topic.</p>
+          <button className="primary" onClick={() => setShowAdd(true)}><Plus size={16} /> Add a resource</button>
+        </div>
+      )}
+
+      {videos.length > 0 && (
+        <>
+          <h4 style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 1, color: "var(--text-mute)", margin: "4px 0 10px" }}>Video lessons</h4>
+          <div className="video-grid">
+            {videos.map((r) => {
+              const id = r.url ? youtubeId(r.url) : null;
+              const isList = r.url ? isPlaylist(r.url) : false;
+              return (
+                <div key={r.id} className="video-card">
+                  {id ? (
+                    <button className="thumb" onClick={() => setPlaying(id)} title="Play lesson">
+                      <img src={`https://i.ytimg.com/vi/${id}/hqdefault.jpg`} alt={r.title} loading="lazy" onError={(e) => ((e.currentTarget.style.display = "none"))} />
+                      <span className="play"><Play size={22} fill="currentColor" /></span>
+                    </button>
+                  ) : isList && r.url ? (
+                    <a className="thumb playlist" href={r.url} target="_blank" rel="noreferrer">
+                      <Video size={28} />
+                      <span>Open playlist</span>
+                    </a>
+                  ) : (
+                    <a className="thumb playlist" href={r.url ?? "#"} target="_blank" rel="noreferrer"><Video size={28} /><span>Watch</span></a>
+                  )}
+                  <div className="video-meta">
+                    <strong>{r.title}</strong>
+                    <span>{r.provider ?? "YouTube"}{r.duration_seconds ? ` · ${Math.round(r.duration_seconds / 60)} min` : ""}</span>
+                    <div className="row" style={{ marginTop: 6 }}>
+                      {id && <button className="secondary small" onClick={() => setPlaying(id)}><Play size={12} /> Watch</button>}
+                      {r.url && <a className="ghost small" href={r.url} target="_blank" rel="noreferrer">Open <ExternalLink size={12} /></a>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {other.length > 0 && (
+        <>
+          <h4 style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 1, color: "var(--text-mute)", margin: "18px 0 10px" }}>Articles & documents</h4>
+          <div className="list">
+            {other.map((r) => (
+              <a key={r.id} href={r.url ?? "#"} target="_blank" rel="noreferrer" className="list-item clickable">
+                <div className="unit-type">{r.resource_type === "document" ? <FileText size={18} /> : <Globe size={18} />}</div>
+                <div className="grow"><h3>{r.title}</h3><p>{r.provider ?? r.resource_type}</p></div>
+                <ExternalLink size={15} style={{ color: "var(--text-mute)" }} />
+              </a>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

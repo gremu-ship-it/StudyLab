@@ -26,7 +26,9 @@ npm run build     # type-check + production build to dist/
 |---|---|
 | **Dashboard** | Mastery ring, weekly study time, reviews due, daily plan, prioritised recommendations, strongest/weakest topics |
 | **Courses** | All 14 LUANAR courses grouped by category with live mastery and lecturer |
-| **Course workspace** | Topic browser; learning units (explanations, worked examples, video, reflection, review) with completion; in-topic quiz; practicals; curated resources; structure editor (add subtopics and units) |
+| **Course workspace** | Topic browser; learning units (explanations, worked examples, video, reflection, review) with completion; in-topic quiz; practicals; **Video Lessons** tab with inline YouTube embeds + "Add link"; structure editor (add subtopics and units) |
+| **Video Lessons** | Every topic can embed YouTube lessons (watch URLs, shorts, playlists all supported) with thumbnails and an inline player; students/lecturers can paste any YouTube, article or document link. Lessons come from 3Blue1Brown, Khan Academy, CrashCourse, Amoeba Sisters, MIT OCW, CS50 and others |
+| **Multi-institution** | The app is institution-agnostic: pick your university and programme in setup, or switch any time from the sidebar/profile. Courses, topics, mastery, recommendations and plan are all scoped per programme. Three institutions are seeded (LUANAR, MUST, UNIMA) and you can add new institutions and programmes in-app |
 | **Study Plan** | Adaptive daily timeline, add blocks, start a tracked session, recent-session history |
 | **Curriculum Inbox** | Add student topics; confirm them into the active curriculum |
 | **Practice** | Per-topic question banks or a mixed 8-question set; MCQ, true/false, numeric and short-answer; results screen feeds mastery and scheduling |

@@ -1,11 +1,11 @@
 import { useSyncExternalStore } from "react";
-import seed from "./seed";
+import seed, { provisionStudentProgramme } from "./seed";
 import type {
-  AIMessage, AIConversation, Database, LearningAttempt, MasteryLevel, QuestionAttempt,
-  ReviewSchedule, StudySession, Topic, UUID,
+  AIMessage, AIConversation, ContentResource, Database, LearningAttempt, MasteryLevel,
+  QuestionAttempt, ReviewSchedule, StudySession, Topic, UUID,
 } from "./types";
 
-const STORAGE_KEY = "studylab.db.v1";
+const STORAGE_KEY = "studylab.db.v2";
 const STUDENT_ID = "student-1";
 
 type Listener = () => void;
@@ -266,6 +266,88 @@ export const store = {
     };
     if (file.type.startsWith("text/") || /\.(txt|md|csv|json)$/i.test(file.name)) reader.readAsText(file);
     else setTimeout(reader.onload as () => void, 900);
+  },
+
+  // ---- multi-institution / programme provisioning ----
+  setupStudent(fullName: string, institutionId: UUID, programmeId: UUID, year: number, semester: 1 | 2) {
+    let profile = state.student_profiles.find((s) => s.id === STUDENT_ID);
+    if (!profile) {
+      profile = {
+        id: STUDENT_ID, full_name: fullName, institution_id: institutionId, programme_id: programmeId,
+        current_year: year, current_semester: semester, timezone: "Africa/Blantyre",
+        study_preferences: { daily_target_minutes: 60 },
+      };
+      state.student_profiles.push(profile);
+    } else {
+      profile.full_name = fullName;
+      profile.institution_id = institutionId;
+      profile.programme_id = programmeId;
+      profile.current_year = year;
+      profile.current_semester = semester;
+    }
+    // Make sure an active plan exists.
+    if (!state.study_plans.some((p) => p.id === "plan-today")) {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      state.study_plans.push({
+        id: "plan-today", student_id: STUDENT_ID, name: "Today's adaptive plan",
+        start_date: todayStr, end_date: todayStr, target_minutes: 45, status: "active",
+      });
+    }
+    provisionStudentProgramme(state, STUDENT_ID, programmeId, year, semester);
+    emit();
+  },
+
+  switchStudentProgramme(programmeId: UUID, year: number, semester: 1 | 2) {
+    const profile = state.student_profiles.find((s) => s.id === STUDENT_ID);
+    if (!profile) return;
+    const programme = state.programmes.find((p) => p.id === programmeId);
+    if (!programme) return;
+    profile.programme_id = programmeId;
+    profile.institution_id = programme.institution_id;
+    profile.current_year = year;
+    profile.current_semester = semester;
+    provisionStudentProgramme(state, STUDENT_ID, programmeId, year, semester);
+    emit();
+  },
+
+  addInstitution(name: string, shortName: string, country: string) {
+    const inst = {
+      id: uid("inst"), name, short_name: shortName || null, country: country || null,
+      website_url: null, is_active: true,
+    };
+    state.institutions.push(inst);
+    emit();
+    return inst;
+  },
+
+  addProgramme(institutionId: UUID, name: string, code: string, description = "", durationYears = 4) {
+    const prog = {
+      id: uid("prog"), institution_id: institutionId, name, code: code || null,
+      description: description || null, duration_years: durationYears, is_active: true,
+    };
+    state.programmes.push(prog);
+    // An active academic period is required to offer courses.
+    const year = new Date().getFullYear();
+    state.academic_periods.push({
+      id: uid("ap"), programme_id: prog.id, academic_year: year, year_level: 1, semester: 1,
+      name: `Year 1 Semester 1`, start_date: `${year}-08-01`, end_date: `${year}-12-15`, status: "active",
+    });
+    emit();
+    return prog;
+  },
+
+  addContentResource(topicId: UUID, title: string, url: string, resourceType: ContentResource["resource_type"]) {
+    const resource: ContentResource = {
+      id: uid("r"), title, description: null, resource_type: resourceType, url,
+      provider: resourceType === "youtube" ? "YouTube" : null, author: null,
+      duration_seconds: resourceType === "youtube" ? 600 : null, difficulty: 2,
+      status: "active", source_type: "student",
+    };
+    const seq = state.topic_resources.filter((tr) => tr.topic_id === topicId).length + 1;
+    state.content_resources.push(resource);
+    state.topic_resources.push({ topic_id: topicId, resource_id: resource.id, relationship_type: "supports", sequence_number: seq });
+    emit();
+    return resource;
   },
 
   // ---- AI conversations ----

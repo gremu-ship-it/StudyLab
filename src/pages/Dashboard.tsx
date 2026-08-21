@@ -1,13 +1,15 @@
 import { CalendarDays, ChevronRight, ClipboardList, PlayCircle, Plus, Repeat, Sparkles, Target, TrendingUp } from "lucide-react";
 import { useStore, store } from "../store";
+import { useStudent } from "../student";
 import type { NavFn } from "../App";
 import { masteryColor, levelLabel } from "../components/ui";
 
 export function Dashboard({ nav }: { nav: NavFn }) {
   const db = useStore((d) => d);
   const sid = store.studentId;
-  const topics = db.topics;
-  const masteryRows = db.topic_mastery.filter((m) => m.student_id === sid);
+  const ctx = useStudent();
+  const topics = db.topics.filter((t) => ctx.courseIds.has(t.course_id));
+  const masteryRows = db.topic_mastery.filter((m) => m.student_id === sid && ctx.courseIds.has(db.topics.find((t) => t.id === m.topic_id)?.course_id ?? ""));
   const overall = Math.round(masteryRows.reduce((s, m) => s + m.mastery_score, 0) / (masteryRows.length || 1));
   const weekSeconds = db.study_sessions
     .filter((s) => Date.now() - new Date(s.started_at).getTime() < 7 * 86400000)
@@ -26,7 +28,7 @@ export function Dashboard({ nav }: { nav: NavFn }) {
     <section className="page">
       <div className="hero">
         <div>
-          <span className="eyebrow">{new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" }).toUpperCase()}</span>
+          <span className="eyebrow">{ctx.institution?.short_name} · {ctx.programme?.name} · {new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" }).toUpperCase()}</span>
           <h1>Good afternoon 👋</h1>
           <p>Your adaptive learning engine is ready. {completedToday}/{planItems.length} plan items done today — keep the streak going.</p>
           <div className="hero-actions">

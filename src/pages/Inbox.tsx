@@ -1,18 +1,20 @@
 import { useState } from "react";
 import { Check, ClipboardList, Plus, Sparkles, Upload } from "lucide-react";
 import { useStore, store } from "../store";
+import { useStudent } from "../student";
 import type { NavFn } from "../App";
 import { Modal, toast } from "../components/ui";
 
 export function InboxPage({ nav }: { nav: NavFn }) {
   const db = useStore((d) => d);
+  const ctx = useStudent();
   const [showAdd, setShowAdd] = useState(false);
-  const [courseId, setCourseId] = useState(db.courses[0]?.id ?? "");
+  const [courseId, setCourseId] = useState(ctx.courses[0]?.id ?? "");
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
 
-  const inbox = db.topics.filter((t) => t.status === "student_added");
-  const confirmed = db.topics.filter((t) => t.status === "confirmed");
+  const inbox = db.topics.filter((t) => t.status === "student_added" && ctx.courseIds.has(t.course_id));
+  const confirmed = db.topics.filter((t) => t.status === "confirmed" && ctx.courseIds.has(t.course_id));
 
   function submit() {
     if (!name.trim() || !courseId) return;
@@ -95,7 +97,7 @@ export function InboxPage({ nav }: { nav: NavFn }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <label>Course
             <select value={courseId} onChange={(e) => setCourseId(e.target.value)}>
-              {db.courses.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
+              {ctx.courses.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
             </select>
           </label>
           <label>Topic name<input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Integration by parts" /></label>

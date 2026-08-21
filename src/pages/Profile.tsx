@@ -1,12 +1,16 @@
 import { useState } from "react";
-import { CalendarClock, GraduationCap, RotateCcw, Save, Target } from "lucide-react";
+import { Building2, CalendarClock, GraduationCap, RotateCcw, Save, Target } from "lucide-react";
 import { useStore, store } from "../store";
+import { useStudent } from "../student";
 import type { NavFn } from "../App";
 import { Modal, initials, toast } from "../components/ui";
+import { SetupModal } from "../components/SetupModal";
 
 export function ProfilePage({ nav: _nav }: { nav: NavFn }) {
   const db = useStore((d) => d);
   const student = db.student_profiles[0];
+  const ctx = useStudent();
+  const [switcher, setSwitcher] = useState(false);
   const institution = db.institutions.find((i) => i.id === student.institution_id);
   const programme = db.programmes.find((p) => p.id === student.programme_id);
   const period = db.academic_periods.find((p) => p.programme_id === student.programme_id && p.status === "active");
@@ -54,6 +58,7 @@ export function ProfilePage({ nav: _nav }: { nav: NavFn }) {
           </div>
           <div className="row">
             <span className="chip brand"><CalendarClock size={12} /> {student.timezone}</span>
+            <button className="secondary small" onClick={() => setSwitcher(true)}><Building2 size={13} /> Switch institution</button>
           </div>
         </div>
       </div>
@@ -88,6 +93,8 @@ export function ProfilePage({ nav: _nav }: { nav: NavFn }) {
           <button className="primary" style={{ background: "linear-gradient(135deg, var(--bad), #be123c)" }} onClick={() => { store.reset(); setConfirmReset(false); toast("Demo data reset"); }}>Reset everything</button>
         </div>
       </Modal>
+
+      <SetupModal open={switcher} mode="switch" onClose={() => setSwitcher(false)} />
     </section>
   );
 }

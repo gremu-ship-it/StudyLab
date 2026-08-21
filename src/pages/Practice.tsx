@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ArrowLeft, ChevronRight, HelpCircle, RotateCcw, Target, Zap } from "lucide-react";
 import { useStore, store } from "../store";
+import { useStudent } from "../student";
 import type { NavFn } from "../App";
 import type { Question } from "../types";
 import { categoryAccent, masteryColor, toast } from "../components/ui";
@@ -9,12 +10,13 @@ import { BookOpen } from "lucide-react";
 export function PracticePage({ nav, initialTopicId }: { nav: NavFn; initialTopicId?: string }) {
   const db = useStore((d) => d);
   const sid = store.studentId;
+  const ctx = useStudent();
   const [topicId, setTopicId] = useState<string | null>(initialTopicId ?? null);
   const [mix, setMix] = useState(false);
 
   const topicsWithQuestions = useMemo(() =>
-    db.topics.filter((t) => db.questions.some((q) => q.topic_id === t.id)),
-    [db.topics, db.questions]
+    db.topics.filter((t) => ctx.courseIds.has(t.course_id) && db.questions.some((q) => q.topic_id === t.id)),
+    [db.topics, db.questions, ctx.courseIds]
   );
 
   const questions: Question[] = useMemo(() => {
