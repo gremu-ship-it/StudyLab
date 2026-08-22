@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import seed, { provisionStudentProgramme } from "./seed";
+import { processDocument } from "./lib/processMaterial";
 import type {
   AIMessage, AIConversation, ContentResource, Database, LearningAttempt, MasteryLevel,
   QuestionAttempt, ReviewSchedule, StudySession, Topic, UUID,
@@ -350,13 +351,73 @@ export const store = {
 
     const row = state.uploaded_materials.find((m) => m.id === id);
     if (row) {
-      row.processing_status = "ready";
-      row.extracted_text = text ?? (mode === "live"
-        ? "File stored in StudyLab. Text extraction for PDFs/Office files runs in the processing pipeline."
-        : "Text extraction not available for this file type.");
-      row.ai_classification = { suggested_topic: guess, confidence: 0.86, course: course?.name ?? null };
+      const hasText = !!text && text.length > 120;
+      row.processing_status = hasText ? "ready" : "processing";
+      row.extracted_text = text;
+      const courseForGuess = course;
+      const guess =
+        lower.includes("calculus") || lower.includes("derivativ") ? "Derivatives"
+        : lower.includes("newton") || lower.includes("force") ? "Newton's Laws of Motion"
+        : lower.includes("cell") ? "Cell Structure and Function"
+        : lower.includes("search") || lower.includes("algorithm") ? "Search and Problem Solving"
+        : courseForGuess ? `${courseForGuess.name} material` : "General study material";
+      row.ai_classification = { suggested_topic: guess, confidence: 0.86, course: courseForGuess?.name ?? null };
       emit();
       sync("uploaded_materials", row);
+
+      // When we have readable text, turn the document into a private study topic
+      // (units + comprehension/essay questions + key terms) the student can
+      // actually study, practise and review — not just a file in a list.
+      if (hasText && text) {
+        try {
+          const processed = processDocument(file.name, text);
+          const materialTopic: Topic = {
+            id: uid("t"), course_id: courseId ?? state.courses.find((c) => c.programme_id === (state.student_profiles.find((s) => s.id === currentStudentId)?.programme_id))?.id ?? state.courses[0]?.id ?? "",
+            name: `📄 ${processed.title}`, description: processed.summary, sequence_number: state.topics.filter((t) => t.course_id === courseId).length + 1,
+            status: "student_added", source_type: "upload", source_reference: id, estimated_minutes: processed.units.reduce((s, u) => s + (u.estimated_minutes ?? 5), 0),
+            created_by: mode === "live" ? currentStudentId : null,
+          };
+          // Link subtopics/units/questions to the new topic.
+          processed.subtopics.forEach((s) => { s.topic_id = materialTopic.id; });
+          processed.units.forEach((u) => { u.topic_id = materialTopic.id; u.subtopic_id = processed.subtopics[0]?.id ?? null; });
+          processed.questions.forEach((q) => { q.topic_id = materialTopic.id; });
+
+          state.topics.push(materialTopic);
+          state.subtopics.push(...processed.subtopics);
+          state.learning_units.push(...processed.units);
+          state.questions.push(...processed.questions);
+          Object.values(processed.options).forEach((opts) => state.question_options.push(...opts));
+          const tm = {
+            id: uid("tm"), student_id: currentStudentId, topic_id: materialTopic.id, mastery_score: 0,
+            mastery_level: "not_started" as const, confidence_score: 0, attempt_count: 0,
+            last_practiced_at: null, last_assessed_at: null, next_review_at: null,
+          };
+          state.topic_mastery.push(tm);
+          row.topic_id = materialTopic.id;
+          row.ai_classification = { ...(row.ai_classification as Record<string, unknown>), study_topic_id: materialTopic.id, questions: processed.questions.length, units: processed.units.length, key_terms: processed.keyTerms.length };
+
+          emit();
+          sync("topics", materialTopic);
+          processed.subtopics.forEach((s) => sync("subtopics", s));
+          processed.units.forEach((u) => sync("learning_units", u));
+          processed.questions.forEach((q) => sync("questions", q));
+          Object.values(processed.options).forEach((opts) => opts.forEach((o) => sync("question_options", o)));
+          sync("topic_mastery", tm);
+          sync("uploaded_materials", row);
+        } catch (e) {
+          console.error("Material processing failed", e);
+        }
+      } else if (!text) {
+        // Binary files (PDF/Word/PPT/images): in the browser we can't extract
+        // text without a heavy parser. Keep the file stored and mark it so the
+        // UI can invite the user to use the AI tutor or add notes.
+        row.processing_status = "ready";
+        row.extracted_text = mode === "live"
+          ? "File stored. For full study extraction, paste the key text into the notes field or use the AI tutor on this document."
+          : "Text extraction not available for this file type in the browser.";
+        emit();
+        sync("uploaded_materials", row);
+      }
     }
   },
 
