@@ -11,7 +11,7 @@ import { SetupModal } from "./components/SetupModal";
 import { AuthScreen } from "./components/Auth";
 import { ModeBadge } from "./components/ModeBadge";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
-import { hydrateFromSupabase, onAuthChange, signOut, upsertRow, deleteRow } from "./lib/live";
+import { hydrateFromSupabase, onAuthChange, signOut, upsertRow, deleteRow, uploadFile } from "./lib/live";
 import { Dashboard } from "./pages/Dashboard";
 import { CoursesPage } from "./pages/Courses";
 import { CoursePage } from "./pages/CoursePage";
@@ -70,6 +70,8 @@ export default function App() {
       store.setRemote({
         upsert: (table, row) => upsertRow(table as never, row),
         remove: (table, id) => deleteRow(table as never, id),
+        uploadFile: (userId, file) => uploadFile(userId, file),
+        onError: (msg) => toast(msg, "info"),
       });
       setHydrating(true);
       try {

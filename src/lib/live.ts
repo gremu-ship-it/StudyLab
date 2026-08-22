@@ -30,17 +30,39 @@ export async function hydrateFromSupabase(): Promise<Database> {
   return db;
 }
 
-/** Push a single student-authored row up to Supabase (upsert by id). */
-export async function upsertRow(table: TableName, row: unknown) {
-  if (!supabase) return;
+/** Push a single student-authored row up to Supabase (upsert by id). Returns error message or null. */
+export async function upsertRow(table: TableName, row: unknown): Promise<string | null> {
+  if (!supabase) return null;
   const { error } = await supabase.from(table).upsert(row as never);
-  if (error) console.warn(`[live] upsert ${table} failed:`, error.message);
+  if (error) {
+    console.warn(`[live] upsert ${table} failed:`, error.message);
+    return error.message;
+  }
+  return null;
 }
 
-export async function deleteRow(table: TableName, id: string) {
-  if (!supabase) return;
+export async function deleteRow(table: TableName, id: string): Promise<string | null> {
+  if (!supabase) return null;
   const { error } = await supabase.from(table).delete().eq("id", id);
-  if (error) console.warn(`[live] delete ${table} failed:`, error.message);
+  if (error) { console.warn(`[live] delete ${table} failed:`, error.message); return error.message; }
+  return null;
+}
+
+/** Upload a file to the private student-materials bucket and return its storage path. */
+export async function uploadFile(userId: string, file: File): Promise<{ path: string; error: string | null }> {
+  if (!supabase) return { path: "", error: "Supabase not configured" };
+  const storagePath = `${userId}/${Date.now()}-${file.name}`;
+  const { error } = await supabase.storage.from("student-materials").upload(storagePath, file, {
+    cacheControl: "3600", upsert: false, contentType: file.type || "application/octet-stream",
+  });
+  return { path: error ? "" : storagePath, error: error ? error.message : null };
+}
+
+/** Create a short-lived signed URL for a private stored file. */
+export async function getFileUrl(storagePath: string): Promise<string | null> {
+  if (!supabase || !storagePath) return null;
+  const { data } = await supabase.storage.from("student-materials").createSignedUrl(storagePath, 3600);
+  return data?.signedUrl ?? null;
 }
 
 /** Tables a student can write to directly (student-owned). */

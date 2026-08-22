@@ -32,8 +32,10 @@ function load(): Database {
 export type DataMode = "demo" | "live";
 
 type RemoteHooks = {
-  upsert?: (table: string, row: unknown) => void;
-  remove?: (table: string, id: string) => void;
+  upsert?: (table: string, row: unknown) => Promise<string | null> | string | null;
+  remove?: (table: string, id: string) => Promise<string | null> | string | null;
+  uploadFile?: (userId: string, file: File) => Promise<{ path: string; error: string | null }>;
+  onError?: (message: string) => void;
 };
 
 let state: Database = load();
@@ -64,7 +66,7 @@ export const uid = (prefix = "id"): UUID => {
 
 /** Push a freshly created row to the configured remote (no-op in demo mode). */
 function sync(table: string, row: unknown) {
-  remote.upsert?.(table, row);
+  void Promise.resolve(remote.upsert?.(table, row)).then((err) => { if (err) remote.onError?.(`Could not save to cloud: ${err}`); });
 }
 
 export const store = {
@@ -96,7 +98,7 @@ export const store = {
   insert<K extends keyof Database>(table: K, row: Database[K][number]) {
     (state[table] as unknown[]).unshift(row as unknown);
     emit();
-    remote.upsert?.(table as string, row);
+    void Promise.resolve(remote.upsert?.(table as string, row)).then((err) => { if (err) remote.onError?.(`Could not save to cloud: ${err}`); });
   },
   update<K extends keyof Database>(table: K, id: UUID, patch: Partial<Database[K][number]>) {
     const rows = state[table] as unknown as Array<{ id: UUID }>;
@@ -104,7 +106,7 @@ export const store = {
     if (row) {
       Object.assign(row, patch);
       emit();
-      remote.upsert?.(table as string, row);
+      void Promise.resolve(remote.upsert?.(table as string, row)).then((err) => { if (err) remote.onError?.(`Could not save to cloud: ${err}`); });
     }
   },
   remove<K extends keyof Database>(table: K, id: UUID) {
@@ -112,7 +114,7 @@ export const store = {
       (r) => r.id !== id
     );
     emit();
-    remote.remove?.(table as string, id);
+    void Promise.resolve(remote.remove?.(table as string, id)).then((err) => { if (err) remote.onError?.(`Could not delete from cloud: ${err}`); });
   },
 
   // ---- curriculum inbox ----
@@ -285,44 +287,58 @@ export const store = {
     emit();
   },
 
-  // ---- uploads (simulated) ----
-  uploadMaterial(file: File, courseId: UUID | null, topicId: UUID | null) {
-    const reader = new FileReader();
+  // ---- uploads (live: Supabase Storage; demo: local) ----
+  async uploadMaterial(file: File, courseId: UUID | null, topicId: UUID | null) {
     const id = uid("um");
+    let storagePath = `${currentStudentId}/${file.name}`;
+
+    // In live mode, push the file to Supabase Storage first so the RLS folder
+    // policy (folder = auth.uid()) is satisfied.
+    if (mode === "live" && remote.uploadFile) {
+      const { path, error } = await remote.uploadFile(currentStudentId, file);
+      if (error) { remote.onError?.(`Upload failed: ${error}`); return; }
+      storagePath = path;
+    }
+
+    const readText = (): Promise<string | null> =>
+      new Promise((resolve) => {
+        if (!(file.type.startsWith("text/") || /\.(txt|md|csv|json)$/i.test(file.name))) return resolve(null);
+        const r = new FileReader();
+        r.onload = () => resolve(typeof r.result === "string" ? r.result.slice(0, 4000) : null);
+        r.onerror = () => resolve(null);
+        r.readAsText(file);
+      });
+
     const upload = {
       id, student_id: currentStudentId, course_id: courseId, topic_id: topicId, file_name: file.name,
-      storage_path: `${currentStudentId}/${file.name}`, mime_type: file.type || "application/octet-stream",
+      storage_path: storagePath, mime_type: file.type || "application/octet-stream",
       file_size: file.size, processing_status: "processing" as const, extracted_text: null,
       ai_classification: null, created_at: new Date().toISOString(),
     };
     state.uploaded_materials.unshift(upload);
     emit();
     sync("uploaded_materials", upload);
-    reader.onload = () => {
-      const text = typeof reader.result === "string" ? reader.result.slice(0, 4000) : null;
-      const lower = (text ?? file.name).toLowerCase();
-      const course = courseId ? state.courses.find((c) => c.id === courseId) : null;
-      const guess =
-        lower.includes("calculus") || lower.includes("derivativ") ? "Derivatives"
-        : lower.includes("newton") || lower.includes("force") ? "Newton's Laws of Motion"
-        : lower.includes("cell") ? "Cell Structure and Function"
-        : lower.includes("search") || lower.includes("algorithm") ? "Search and Problem Solving"
-        : course ? `${course.name} material` : "General study material";
-      const row = state.uploaded_materials.find((m) => m.id === id);
-      if (row) {
-        row.processing_status = "ready";
-        row.extracted_text = text ?? "Text extraction not available for this file type.";
-        row.ai_classification = { suggested_topic: guess, confidence: 0.86, course: course?.name ?? null };
-        emit();
-        sync("uploaded_materials", row);
-      }
-    };
-    reader.onerror = () => {
-      const row = state.uploaded_materials.find((m) => m.id === id);
-      if (row) { row.processing_status = "failed"; emit(); }
-    };
-    if (file.type.startsWith("text/") || /\.(txt|md|csv|json)$/i.test(file.name)) reader.readAsText(file);
-    else setTimeout(reader.onload as () => void, 900);
+
+    const text = await readText();
+    const lower = (text ?? file.name).toLowerCase();
+    const course = courseId ? state.courses.find((c) => c.id === courseId) : null;
+    const guess =
+      lower.includes("calculus") || lower.includes("derivativ") ? "Derivatives"
+      : lower.includes("newton") || lower.includes("force") ? "Newton's Laws of Motion"
+      : lower.includes("cell") ? "Cell Structure and Function"
+      : lower.includes("search") || lower.includes("algorithm") ? "Search and Problem Solving"
+      : course ? `${course.name} material` : "General study material";
+
+    const row = state.uploaded_materials.find((m) => m.id === id);
+    if (row) {
+      row.processing_status = "ready";
+      row.extracted_text = text ?? (mode === "live"
+        ? "File stored in StudyLab. Text extraction for PDFs/Office files runs in the processing pipeline."
+        : "Text extraction not available for this file type.");
+      row.ai_classification = { suggested_topic: guess, confidence: 0.86, course: course?.name ?? null };
+      emit();
+      sync("uploaded_materials", row);
+    }
   },
 
   // ---- multi-institution / programme provisioning ----
@@ -356,8 +372,9 @@ export const store = {
       sync("study_plans", plan);
       planId = plan.id;
     }
-    provisionStudentProgramme(state, currentStudentId, programmeId, year, semester, planId);
-    // Sync the rows provisionStudentProgramme created.
+    if (mode === "live") provisionLiveStudent(state, currentStudentId, programmeId, year, semester, planId);
+    else provisionStudentProgramme(state, currentStudentId, programmeId, year, semester, planId);
+    // Sync the student-owned rows that provisioning created.
     sync("enrolments", state.enrolments.find((e) => e.student_id === currentStudentId));
     state.student_course_enrolments.filter((e) => e.student_id === currentStudentId).forEach((r) => sync("student_course_enrolments", r));
     state.topic_mastery.filter((r) => r.student_id === currentStudentId).forEach((r) => sync("topic_mastery", r));
@@ -480,6 +497,46 @@ export const store = {
     return aiMsg;
   },
 };
+
+/**
+ * Provision student-owned rows in LIVE mode using only IDs that already exist
+ * in the (hydrated) database — enrolment + course enrolments against real
+ * offerings, empty mastery/review/plan rows. Curriculum (topics, units,
+ * questions) comes from the shared DB content, not fake local IDs.
+ */
+function provisionLiveStudent(
+  db: Database, studentId: string, programmeId: string, year: number, semester: 1 | 2, planId: string
+) {
+  const period = db.academic_periods.find((p) => p.programme_id === programmeId && p.year_level === year && p.semester === semester && p.status === "active")
+    ?? db.academic_periods.find((p) => p.programme_id === programmeId && p.status === "active");
+  if (!period) return;
+
+  if (!db.enrolments.some((e) => e.student_id === studentId && e.programme_id === programmeId)) {
+    db.enrolments.push({
+      id: uid("enr"), student_id: studentId, programme_id: programmeId, academic_period_id: period.id,
+      status: "active", started_at: new Date().toISOString(), ended_at: null,
+    });
+  }
+  const offerings = db.course_offerings.filter((o) => o.academic_period_id === period.id);
+  offerings.forEach((o) => {
+    if (!db.student_course_enrolments.some((e) => e.student_id === studentId && e.course_offering_id === o.id)) {
+      db.student_course_enrolments.push({ id: uid("sce"), student_id: studentId, course_offering_id: o.id, status: "active" });
+    }
+  });
+
+  // Seed a small daily plan from the first available topics.
+  const courseIds = new Set(db.courses.filter((c) => c.programme_id === programmeId).map((c) => c.id));
+  const topics = db.topics.filter((t) => courseIds.has(t.course_id)).slice(0, 4);
+  const labels = ["quick revision", "practice set", "worked problems", "overview"];
+  topics.forEach((t, i) => {
+    if (db.study_plan_items.some((it) => it.study_plan_id === planId && it.topic_id === t.id)) return;
+    db.study_plan_items.push({
+      id: uid("spi"), study_plan_id: planId, topic_id: t.id,
+      title: `${t.name} — ${labels[i] ?? "study"}`, scheduled_date: new Date().toISOString().slice(0, 10),
+      planned_minutes: [10, 15, 15, 5][i] ?? 10, sequence_number: i + 1, status: "planned",
+    });
+  });
+}
 
 function levelForScore(s: number): MasteryLevel {
   if (s >= 90) return "mastered";
