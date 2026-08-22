@@ -111,7 +111,7 @@ export const store = {
     currentStudentId = DEMO_STUDENT_ID;
     emit();
   },
-  studentId: currentStudentId,
+  get studentId() { return currentStudentId; },
 
   // ---- generic helpers ----
   insert<K extends keyof Database>(table: K, row: Database[K][number]) {

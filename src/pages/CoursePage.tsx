@@ -20,6 +20,7 @@ export function CoursePage({ courseId, nav }: { courseId: string; nav: NavFn }) 
   const [topicName, setTopicName] = useState("");
   const [topicDesc, setTopicDesc] = useState("");
   const [unitFilters, setUnitFilters] = useState<{ type: UnitType | "all"; subtopic: string | "all" }>({ type: "all", subtopic: "all" });
+  const [coursePlaying, setCoursePlaying] = useState<string | null>(null);
 
   const course = db.courses.find((c) => c.id === courseId);
   const offering = db.course_offerings.find((o) => o.course_id === courseId);
@@ -30,6 +31,20 @@ export function CoursePage({ courseId, nav }: { courseId: string; nav: NavFn }) 
   const questions = db.questions.filter((q) => q.topic_id === activeTopic?.id);
   const practicals = db.practicals.filter((p) => p.topic_id === activeTopic?.id);
   const resources = db.topic_resources.filter((tr) => tr.topic_id === activeTopic?.id).map((tr) => db.content_resources.find((r) => r.id === tr.resource_id)!).filter(Boolean);
+  const videoCount = resources.filter((r) => r.resource_type === "youtube").length;
+
+  // All video lessons across every topic in this course (shown at course level).
+  const courseVideos = useMemo(() => {
+    const out: { resource: import("../types").ContentResource; topicName: string }[] = [];
+    topics.forEach((t) => {
+      db.topic_resources
+        .filter((tr) => tr.topic_id === t.id)
+        .map((tr) => db.content_resources.find((r) => r.id === tr.resource_id))
+        .filter((r): r is import("../types").ContentResource => !!r && r.resource_type === "youtube")
+        .forEach((r) => out.push({ resource: r, topicName: t.name }));
+    });
+    return out;
+  }, [topics, db.topic_resources, db.content_resources]);
   const mastery = db.topic_mastery.find((m) => m.student_id === sid && m.topic_id === activeTopic?.id);
 
   if (!course) return <section className="page"><p>Course not found.</p></section>;
@@ -52,9 +67,29 @@ export function CoursePage({ courseId, nav }: { courseId: string; nav: NavFn }) 
           <h1 style={{ margin: "2px 0" }}>{course.name}</h1>
           <p>{course.description}{offering?.lecturer_name ? ` · Lecturer: ${offering.lecturer_name}` : ""}</p>
         </div>
-        <button className="secondary" onClick={() => activeTopic && nav({ name: "ai", topicId: activeTopic.id, courseId: course.id })}><Sparkles size={16} /> Ask AI</button>
-        <button className="primary" onClick={() => setShowAddTopic(true)}><Plus size={16} /> Topic</button>
+        <div className="row" style={{ flex: "none" }}>
+          <button className="secondary" onClick={() => activeTopic && nav({ name: "ai", topicId: activeTopic.id, courseId: course.id })}><Sparkles size={16} /> Ask AI</button>
+          <button className="primary" onClick={() => setShowAddTopic(true)}><Plus size={16} /> Topic</button>
+        </div>
       </div>
+
+      {courseVideos.length > 0 && (
+        <div style={{ marginBottom: 18 }}>
+          <div className="section-head" style={{ margin: "0 0 12px" }}>
+            <div><h2><Video size={17} style={{ display: "inline", verticalAlign: "-3px", color: "var(--brand)" }} /> Video lessons</h2><p>Curated YouTube lessons for this course — click to watch inline</p></div>
+            <span className="chip brand">{courseVideos.length} videos</span>
+          </div>
+          {coursePlaying && <VideoPlayer videoId={coursePlaying} onClose={() => setCoursePlaying(null)} />}
+          <div className="video-grid">
+            {courseVideos.slice(0, 6).map(({ resource: r, topicName }) => (
+              <VideoCard key={r.id} resource={r} subtitle={topicName} onPlay={() => { const yt = r.url ? youtubeId(r.url) : null; if (yt) setCoursePlaying(yt); }} onJump={() => {
+                const t = topics.find((tp) => tp.name === topicName);
+                if (t) { setSelectedTopic(t.id); setTab("resources"); }
+              }} />
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="topic-layout">
         {/* Topic sidebar */}
@@ -103,7 +138,7 @@ export function CoursePage({ courseId, nav }: { courseId: string; nav: NavFn }) 
                 <TabBtn id="units" current={tab} set={setTab} icon={<Library size={14} />} label={`Learning${units.length ? ` (${units.length})` : ""}`} />
                 <TabBtn id="practice" current={tab} set={setTab} icon={<HelpCircle size={14} />} label={`Practice${questions.length ? ` (${questions.length})` : ""}`} />
                 <TabBtn id="practicals" current={tab} set={setTab} icon={<FlaskConical size={14} />} label={`Practicals${practicals.length ? ` (${practicals.length})` : ""}`} />
-                <TabBtn id="resources" current={tab} set={setTab} icon={<Link2 size={14} />} label={`Resources${resources.length ? ` (${resources.length})` : ""}`} />
+                <TabBtn id="resources" current={tab} set={setTab} icon={<Video size={14} />} label={`Video Lessons${videoCount ? ` (${videoCount})` : ""}`} />
                 <TabBtn id="manage" current={tab} set={setTab} icon={<ListTree size={14} />} label="Structure" />
               </div>
 
@@ -358,6 +393,40 @@ function youtubeId(url: string): string | null {
 
 const isPlaylist = (url: string) => /[?&]list=/.test(url);
 
+function VideoCard({ resource, subtitle, onPlay, onJump }: { resource: import("../types").ContentResource; subtitle?: string; onPlay?: () => void; onJump?: () => void }) {
+  const id = resource.url ? youtubeId(resource.url) : null;
+  return (
+    <div className="video-card">
+      {id ? (
+        <button className="thumb" onClick={onPlay} title="Play lesson">
+          <img src={`https://i.ytimg.com/vi/${id}/hqdefault.jpg`} alt={resource.title} loading="lazy" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+          <span className="play"><Play size={22} fill="currentColor" /></span>
+        </button>
+      ) : resource.url && isPlaylist(resource.url) ? (
+        <a className="thumb playlist" href={resource.url} target="_blank" rel="noreferrer"><Video size={28} /><span>Open playlist</span></a>
+      ) : (
+        <a className="thumb playlist" href={resource.url ?? "#"} target="_blank" rel="noreferrer"><Video size={28} /><span>Watch</span></a>
+      )}
+      <div className="video-meta">
+        <strong>{resource.title}</strong>
+        <span>{subtitle ?? resource.provider ?? "YouTube"}{resource.duration_seconds ? ` · ${Math.round(resource.duration_seconds / 60)} min` : ""}</span>
+        {onJump && <button className="ghost small" onClick={onJump} style={{ alignSelf: "flex-start", marginTop: 4 }}>View topic <ChevronRight size={12} /></button>}
+      </div>
+    </div>
+  );
+}
+
+function VideoPlayer({ videoId, onClose }: { videoId: string; onClose: () => void }) {
+  return (
+    <div className="panel" style={{ marginBottom: 16, padding: 12, position: "relative" }}>
+      <button className="close" onClick={onClose} style={{ position: "absolute", top: 10, right: 10, zIndex: 2 }}><X size={16} /></button>
+      <div style={{ position: "relative", paddingBottom: "56.25%", height: 0, borderRadius: 10, overflow: "hidden", background: "#000" }}>
+        <iframe src={`https://www.youtube.com/embed/${videoId}?rel=0&autoplay=1`} title="Lesson" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
+      </div>
+    </div>
+  );
+}
+
 function ResourcesTab({ resources, topicId }: { resources: import("../types").ContentResource[]; topicId: string }) {
   const [showAdd, setShowAdd] = useState(false);
   const [title, setTitle] = useState("");
@@ -409,19 +478,7 @@ function ResourcesTab({ resources, topicId }: { resources: import("../types").Co
         </div>
       )}
 
-      {/* Inline video player */}
-      {playing && (
-        <div className="panel" style={{ marginBottom: 16, padding: 12, position: "relative" }}>
-          <button className="close" onClick={() => setPlaying(null)} style={{ position: "absolute", top: 10, right: 10, zIndex: 2 }}><X size={16} /></button>
-          <div className="video-frame" style={{ position: "relative", paddingBottom: "56.25%", height: 0, borderRadius: 10, overflow: "hidden", background: "#000" }}>
-            <iframe
-              src={`https://www.youtube.com/embed/${playing}?rel=0&autoplay=1`}
-              title="Lesson video" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen
-            />
-          </div>
-        </div>
-      )}
+      {playing && <VideoPlayer videoId={playing} onClose={() => setPlaying(null)} />}
 
       {videos.length === 0 && other.length === 0 && !showAdd && (
         <div className="empty-state">
@@ -433,40 +490,11 @@ function ResourcesTab({ resources, topicId }: { resources: import("../types").Co
       )}
 
       {videos.length > 0 && (
-        <>
-          <h4 style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 1, color: "var(--text-mute)", margin: "4px 0 10px" }}>Video lessons</h4>
-          <div className="video-grid">
-            {videos.map((r) => {
-              const id = r.url ? youtubeId(r.url) : null;
-              const isList = r.url ? isPlaylist(r.url) : false;
-              return (
-                <div key={r.id} className="video-card">
-                  {id ? (
-                    <button className="thumb" onClick={() => setPlaying(id)} title="Play lesson">
-                      <img src={`https://i.ytimg.com/vi/${id}/hqdefault.jpg`} alt={r.title} loading="lazy" onError={(e) => ((e.currentTarget.style.display = "none"))} />
-                      <span className="play"><Play size={22} fill="currentColor" /></span>
-                    </button>
-                  ) : isList && r.url ? (
-                    <a className="thumb playlist" href={r.url} target="_blank" rel="noreferrer">
-                      <Video size={28} />
-                      <span>Open playlist</span>
-                    </a>
-                  ) : (
-                    <a className="thumb playlist" href={r.url ?? "#"} target="_blank" rel="noreferrer"><Video size={28} /><span>Watch</span></a>
-                  )}
-                  <div className="video-meta">
-                    <strong>{r.title}</strong>
-                    <span>{r.provider ?? "YouTube"}{r.duration_seconds ? ` · ${Math.round(r.duration_seconds / 60)} min` : ""}</span>
-                    <div className="row" style={{ marginTop: 6 }}>
-                      {id && <button className="secondary small" onClick={() => setPlaying(id)}><Play size={12} /> Watch</button>}
-                      {r.url && <a className="ghost small" href={r.url} target="_blank" rel="noreferrer">Open <ExternalLink size={12} /></a>}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </>
+        <div className="video-grid">
+          {videos.map((r) => (
+            <VideoCard key={r.id} resource={r} onPlay={() => { const yt = r.url ? youtubeId(r.url) : null; if (yt) setPlaying(yt); }} />
+          ))}
+        </div>
       )}
 
       {other.length > 0 && (
