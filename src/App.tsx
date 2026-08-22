@@ -25,6 +25,7 @@ import { MaterialsPage } from "./pages/Materials";
 import { AITutorPage } from "./pages/AITutor";
 import { ProfilePage } from "./pages/Profile";
 import { DataExplorerPage } from "./pages/DataExplorer";
+import { LedgrDemo } from "./pages/LedgrDemo";
 
 export type Route =
   | { name: "dashboard" }
@@ -39,7 +40,8 @@ export type Route =
   | { name: "materials" }
   | { name: "ai"; conversationId?: string; topicId?: string; courseId?: string }
   | { name: "profile" }
-  | { name: "explorer" };
+  | { name: "explorer" }
+  | { name: "ledgr" };
 
 export type NavFn = (r: Route) => void;
 
@@ -131,6 +133,7 @@ export default function App() {
     ["materials", "Materials", Upload],
     ["ai", "AI Tutor", MessageSquare],
     ["explorer", "Data Explorer", Library],
+    ["ledgr", "Ledgr AI demo", Sparkles],
   ];
 
   const pageTitle = useMemo(() => {
@@ -242,6 +245,7 @@ export default function App() {
           {route.name === "ai" && <AITutorPage nav={nav} conversationId={route.conversationId} topicId={route.topicId} courseId={route.courseId} />}
           {route.name === "profile" && <ProfilePage nav={nav} />}
           {route.name === "explorer" && <DataExplorerPage />}
+        {route.name === "ledgr" && <LedgrDemo />}
         </div>
       </main>
       <ToastHost />
