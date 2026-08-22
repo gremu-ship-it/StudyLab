@@ -451,16 +451,21 @@ begin
 end $$;
 
 -- Seed institution, programme, current academic period, and current timetable courses.
+-- Uses WHERE NOT EXISTS so the migration is idempotent regardless of which unique
+-- constraints already exist (avoids 42P10 on partially-migrated databases).
 insert into public.institutions (name, short_name, country)
-values ('Lilongwe University of Agriculture and Natural Resources', 'LUANAR', 'Malawi')
-on conflict (name) do nothing;
+select 'Lilongwe University of Agriculture and Natural Resources', 'LUANAR', 'Malawi'
+where not exists (select 1 from public.institutions where name = 'Lilongwe University of Agriculture and Natural Resources');
 
 insert into public.programmes (institution_id, name, description)
-select id, 'BSc in Natural & Applied Science',
+select i.id, 'BSc in Natural & Applied Science',
        'Current programme seed based on the supplied timetable. Additional curriculum information will be added as it becomes available.'
-from public.institutions
-where short_name = 'LUANAR'
-on conflict (institution_id, name) do nothing;
+from public.institutions i
+where i.short_name = 'LUANAR'
+  and not exists (
+    select 1 from public.programmes p
+    where p.institution_id = i.id and p.name = 'BSc in Natural & Applied Science'
+  );
 
 insert into public.academic_periods (programme_id, academic_year, year_level, semester, name)
 select p.id, 2026, 2, 1, 'Year 2 Semester 1'
@@ -468,7 +473,10 @@ from public.programmes p
 join public.institutions i on i.id = p.institution_id
 where i.short_name = 'LUANAR'
   and p.name = 'BSc in Natural & Applied Science'
-on conflict (programme_id, academic_year, year_level, semester) do nothing;
+  and not exists (
+    select 1 from public.academic_periods ap
+    where ap.programme_id = p.id and ap.academic_year = 2026 and ap.year_level = 2 and ap.semester = 1
+  );
 
 insert into public.courses (programme_id, code, name, category, status, source_type)
 select p.id, x.code, x.name, x.category, 'confirmed', 'official_timetable'
@@ -491,7 +499,9 @@ cross join (values
   ('NAAE32101','Introduction to Agricultural Economics','Agricultural Economics')
 ) as x(code,name,category)
 where p.name = 'BSc in Natural & Applied Science'
-on conflict (programme_id, code) do nothing;
+  and not exists (
+    select 1 from public.courses c where c.programme_id = p.id and c.code = x.code
+  );
 
 -- RLS
 alter table public.student_profiles enable row level security;
@@ -583,8 +593,8 @@ create policy "authenticated read curriculum sources" on public.curriculum_sourc
 
 -- Storage bucket for private student material uploads.
 insert into storage.buckets (id, name, public)
-values ('student-materials', 'student-materials', false)
-on conflict (id) do nothing;
+select 'student-materials', 'student-materials', false
+where not exists (select 1 from storage.buckets where id = 'student-materials');
 
 create policy "students upload own materials"
 on storage.objects for insert to authenticated
