@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import seed, { provisionStudentProgramme } from "./seed";
 import { processDocument } from "./lib/processMaterial";
+import { extractRemoteText } from "./lib/extract";
 import type {
   AIMessage, AIConversation, ContentResource, Database, LearningAttempt, MasteryLevel,
   QuestionAttempt, ReviewSchedule, StudySession, Topic, UUID,
@@ -307,6 +308,56 @@ export const store = {
     emit();
   },
 
+  // ---- uploaded document → study pack ----
+  buildStudyPackFromText(uploadId: string, fileName: string, text: string, courseId: UUID | null) {
+    const processed = processDocument(fileName, text);
+    const studentProgramme = state.student_profiles.find((s) => s.id === currentStudentId)?.programme_id;
+    const fallbackCourse = state.courses.find((c) => c.programme_id === studentProgramme)?.id ?? state.courses[0]?.id ?? "";
+    const materialTopic: Topic = {
+      id: uid("t"), course_id: courseId ?? fallbackCourse,
+      name: `📄 ${processed.title}`, description: processed.summary,
+      sequence_number: state.topics.filter((t) => t.course_id === (courseId ?? fallbackCourse)).length + 1,
+      status: "student_added", source_type: "upload", source_reference: uploadId,
+      estimated_minutes: processed.units.reduce((s, u) => s + (u.estimated_minutes ?? 5), 0),
+      created_by: mode === "live" ? currentStudentId : null,
+    };
+    processed.subtopics.forEach((s) => { s.topic_id = materialTopic.id; });
+    processed.units.forEach((u) => { u.topic_id = materialTopic.id; u.subtopic_id = processed.subtopics[0]?.id ?? null; });
+    processed.questions.forEach((q) => { q.topic_id = materialTopic.id; });
+
+    state.topics.push(materialTopic);
+    state.subtopics.push(...processed.subtopics);
+    state.learning_units.push(...processed.units);
+    state.questions.push(...processed.questions);
+    Object.values(processed.options).forEach((opts) => state.question_options.push(...opts));
+    const tm = {
+      id: uid("tm"), student_id: currentStudentId, topic_id: materialTopic.id, mastery_score: 0,
+      mastery_level: "not_started" as const, confidence_score: 0, attempt_count: 0,
+      last_practiced_at: null, last_assessed_at: null, next_review_at: null,
+    };
+    state.topic_mastery.push(tm);
+    const row = state.uploaded_materials.find((m) => m.id === uploadId);
+    if (row) {
+      row.topic_id = materialTopic.id;
+      row.ai_classification = {
+        ...(row.ai_classification as Record<string, unknown> | null ?? {}),
+        study_topic_id: materialTopic.id, questions: processed.questions.length,
+        units: processed.units.length, key_terms: processed.keyTerms.length,
+      };
+      row.processing_status = "ready";
+      row.extracted_text = text;
+    }
+    emit();
+    sync("topics", materialTopic);
+    processed.subtopics.forEach((s) => sync("subtopics", s));
+    processed.units.forEach((u) => sync("learning_units", u));
+    processed.questions.forEach((q) => sync("questions", q));
+    Object.values(processed.options).forEach((opts) => opts.forEach((o) => sync("question_options", o)));
+    sync("topic_mastery", tm);
+    if (row) sync("uploaded_materials", row);
+    return materialTopic.id;
+  },
+
   // ---- uploads (live: Supabase Storage; demo: local) ----
   async uploadMaterial(file: File, courseId: UUID | null, topicId: UUID | null) {
     const id = uid("um");
@@ -370,51 +421,29 @@ export const store = {
       // actually study, practise and review — not just a file in a list.
       if (hasText && text) {
         try {
-          const processed = processDocument(file.name, text);
-          const materialTopic: Topic = {
-            id: uid("t"), course_id: courseId ?? state.courses.find((c) => c.programme_id === (state.student_profiles.find((s) => s.id === currentStudentId)?.programme_id))?.id ?? state.courses[0]?.id ?? "",
-            name: `📄 ${processed.title}`, description: processed.summary, sequence_number: state.topics.filter((t) => t.course_id === courseId).length + 1,
-            status: "student_added", source_type: "upload", source_reference: id, estimated_minutes: processed.units.reduce((s, u) => s + (u.estimated_minutes ?? 5), 0),
-            created_by: mode === "live" ? currentStudentId : null,
-          };
-          // Link subtopics/units/questions to the new topic.
-          processed.subtopics.forEach((s) => { s.topic_id = materialTopic.id; });
-          processed.units.forEach((u) => { u.topic_id = materialTopic.id; u.subtopic_id = processed.subtopics[0]?.id ?? null; });
-          processed.questions.forEach((q) => { q.topic_id = materialTopic.id; });
-
-          state.topics.push(materialTopic);
-          state.subtopics.push(...processed.subtopics);
-          state.learning_units.push(...processed.units);
-          state.questions.push(...processed.questions);
-          Object.values(processed.options).forEach((opts) => state.question_options.push(...opts));
-          const tm = {
-            id: uid("tm"), student_id: currentStudentId, topic_id: materialTopic.id, mastery_score: 0,
-            mastery_level: "not_started" as const, confidence_score: 0, attempt_count: 0,
-            last_practiced_at: null, last_assessed_at: null, next_review_at: null,
-          };
-          state.topic_mastery.push(tm);
-          row.topic_id = materialTopic.id;
-          row.ai_classification = { ...(row.ai_classification as Record<string, unknown>), study_topic_id: materialTopic.id, questions: processed.questions.length, units: processed.units.length, key_terms: processed.keyTerms.length };
-
-          emit();
-          sync("topics", materialTopic);
-          processed.subtopics.forEach((s) => sync("subtopics", s));
-          processed.units.forEach((u) => sync("learning_units", u));
-          processed.questions.forEach((q) => sync("questions", q));
-          Object.values(processed.options).forEach((opts) => opts.forEach((o) => sync("question_options", o)));
-          sync("topic_mastery", tm);
-          sync("uploaded_materials", row);
+          this.buildStudyPackFromText(id, file.name, text, courseId);
         } catch (e) {
           console.error("Material processing failed", e);
         }
+      } else if (mode === "live" && upload.storage_path) {
+        // Binary file uploaded to Storage: ask the Edge Function to extract
+        // text (PDF/Word/PPT), then build the study pack.
+        extractRemoteText(upload.storage_path).then((remoteText) => {
+          if (remoteText && remoteText.length > 120) {
+            try { this.buildStudyPackFromText(id, file.name, remoteText, courseId); }
+            catch (e) { console.error(e); }
+          } else {
+            const r2 = state.uploaded_materials.find((m) => m.id === id);
+            if (r2) {
+              r2.processing_status = "ready";
+              r2.extracted_text = "Could not extract text automatically. Paste key sections via the Materials notes panel, or ask the AI tutor about this file.";
+              emit(); sync("uploaded_materials", r2);
+            }
+          }
+        });
       } else if (!text) {
-        // Binary files (PDF/Word/PPT/images): in the browser we can't extract
-        // text without a heavy parser. Keep the file stored and mark it so the
-        // UI can invite the user to use the AI tutor or add notes.
         row.processing_status = "ready";
-        row.extracted_text = mode === "live"
-          ? "File stored. For full study extraction, paste the key text into the notes field or use the AI tutor on this document."
-          : "Text extraction not available for this file type in the browser.";
+        row.extracted_text = "Text extraction not available for this file type in the browser. Use the notes panel to paste text.";
         emit();
         sync("uploaded_materials", row);
       }

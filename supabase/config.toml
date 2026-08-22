@@ -1,0 +1,5 @@
+# Supabase project configuration (project-specific values are set via the dashboard).
+project_id = "studylab"
+
+[functions.extract-text]
+verify_jwt = true

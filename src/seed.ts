@@ -136,10 +136,7 @@ const calcTopic = (cid: string) => {
     ], questions: [
       { text: "The derivative measures:", options: ["Area under a curve", "Instantaneous rate of change", "Average value", "The intercept"], answer: "B", explain: "The derivative is the instantaneous rate of change.", diff: 1 },
       { text: "If f(x)=3x²+2x, f'(x)=", options: ["6x+2", "3x+2", "6x²+2", "6x"], answer: "A", explain: "Differentiate term by term: 6x + 2.", diff: 2 },
-    ], practical: { title: "Estimating a derivative numerically", objective: "Approximate the slope of a curve using secant lines with shrinking h.", steps: [
-      "Choose f(x)=x² at x=1.", "Compute [f(1+h)−f(1)]/h for h=0.1, 0.01, 0.001.",
-      "Record the values in a table.", "Observe that they approach 2, the exact derivative.",
-    ]}},
+    ]},
   ], [
     { title: "Khan Academy — Derivatives introduction", type: "website", url: "https://www.khanacademy.org/math/differential-calculus/dc-diff-intro", provider: "Khan Academy" },
     { title: "3Blue1Brown — Derivative paradox", type: "youtube", url: "https://www.youtube.com/watch?v=9vKqVkMQHKk", provider: "3Blue1Brown" },
@@ -180,10 +177,7 @@ const mechanicsTopic = (cid: string) => {
       { text: "A 5 kg object experiences a net force of 20 N. Its acceleration is:", options: ["0.25 m/s²", "4 m/s²", "25 m/s²", "100 m/s²"], answer: "B", explain: "a = F/m = 20/5 = 4 m/s².", diff: 1, hint: "Use F = ma and rearrange." },
       { text: "Newton's third law forces always act on the same object.", type: "true_false", answer: "false", explain: "Action–reaction pairs act on different bodies.", diff: 1 },
       { text: "Inertia is the tendency of an object to:", options: ["Accelerate", "Resist changes in motion", "Gain mass", "Exert gravity"], answer: "B", explain: "Inertia is resistance to changes in velocity, measured by mass.", diff: 2 },
-    ], practical: { title: "Verifying F = ma with a dynamics cart", objective: "Show that acceleration is proportional to force for constant mass.", steps: [
-      "Set up a track, cart and pulley.", "Keep cart mass constant; vary hanging mass to change force.",
-      "Time the cart over a fixed distance for each force.", "Plot acceleration against force and confirm a straight line.",
-    ]}},
+    ]},
   ], [
     { title: "CrashCourse Physics — Newton's Laws", type: "youtube", url: "https://www.youtube.com/watch?v=kKKM8Y-u7ds", provider: "CrashCourse" },
     { title: "Khan Academy — Forces and Newton's laws", type: "website", url: "https://www.khanacademy.org/science/physics/forces-newtons-laws", provider: "Khan Academy" },
