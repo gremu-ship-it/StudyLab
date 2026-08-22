@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState } from "react";
 import seed, { provisionStudentProgramme } from "./seed";
 import type {
   AIMessage, AIConversation, ContentResource, Database, LearningAttempt, MasteryLevel,
@@ -56,6 +56,10 @@ let state: Database = load();
 let mode: DataMode = "demo";
 let remote: RemoteHooks = {};
 const listeners = new Set<Listener>();
+// Bumped on every emit; components subscribe to this number instead of the
+// mutable state object so selectors that return fresh arrays/objects can be
+// memoised without triggering useSyncExternalStore's infinite-update guard.
+let version = 0;
 
 function persist() {
   try {
@@ -66,6 +70,7 @@ function persist() {
 }
 
 function emit() {
+  version += 1;
   persist();
   listeners.forEach((l) => l());
 }
@@ -88,7 +93,7 @@ export const store = {
   getMode: () => mode,
   subscribe(l: Listener) {
     listeners.add(l);
-    return () => listeners.delete(l);
+    return () => { listeners.delete(l); };
   },
   /** Replace the entire in-memory database (used when hydrating from Supabase). */
   replace(next: Database, nextMode: DataMode = "live") {
@@ -614,12 +619,19 @@ function generateReply(question: string, conv: AIConversation, db: Database): st
 }
 
 // ---- React hook ----
+/**
+ * Subscribe to the store. `selector` may return a fresh array/object (e.g. via
+ * .filter/.map) or even be an inline function: we track a version counter and
+ * only recompute when the store actually emitted, preventing React's
+ * "maximum update depth" loop.
+ */
 export function useStore<T>(selector: (db: Database) => T): T {
-  return useSyncExternalStore(
-    store.subscribe,
-    () => selector(state),
-    () => selector(state)
-  );
+  const [, setV] = useState(version);
+  useEffect(() => store.subscribe(() => setV(version)), []);
+  // Keep latest selector in a ref so an inline function doesn't invalidate memo.
+  const selRef = { current: selector };
+  selRef.current = selector;
+  return useMemo(() => selRef.current(state), [version]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 export { levelForScore };
