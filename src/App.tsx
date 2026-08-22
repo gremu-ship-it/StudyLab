@@ -58,8 +58,10 @@ export default function App() {
   const [wantDemo, setWantDemo] = useState(false);
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!isSupabaseConfigured) { setBootstrapped(true); return; }
+    let cancelled = false;
     const unsub = onAuthChange(async (uid) => {
+      if (cancelled) return;
       setAuthUserId(uid);
       if (!uid) {
         store.reset();
@@ -80,22 +82,30 @@ export default function App() {
         store.replace(db, "live");
         store.setStudentId(uid);
         if (!hasStudent) {
-          // First sign-in: provision a demo profile/curriculum tied to this user.
-          const { data: sess } = await supabase!.auth.getSession();
-          store.setupStudent(
-            (sess.session?.user.user_metadata?.full_name as string) || "Student",
-            "inst-luanar", "prog-nas", 2, 1
-          );
+          // First sign-in: look up the real LUANAR NAS programme from the DB
+          // (never use the local seed IDs in live mode — they are not UUIDs).
+          const inst = db.institutions.find((i) => i.short_name === "LUANAR") ?? db.institutions[0];
+          const prog = db.programmes.find((p) => p.name === "BSc in Natural & Applied Science")
+            ?? db.programmes.find((p) => p.institution_id === inst?.id)
+            ?? db.programmes[0];
+          if (inst && prog) {
+            const { data: sess } = await supabase!.auth.getSession();
+            store.setupStudent(
+              (sess.session?.user.user_metadata?.full_name as string) || "Student",
+              inst.id, prog.id, prog ? (db.academic_periods.find((a) => a.programme_id === prog.id && a.status === "active")?.year_level ?? 2) : 2,
+              1
+            );
+          }
         }
       } catch (e) {
         console.error(e);
-        toast("Could not load cloud data — showing demo", "info");
+        toast(`Could not load cloud data: ${(e as Error).message}`, "info");
       } finally {
         setHydrating(false);
         setBootstrapped(true);
       }
     });
-    return unsub;
+    return () => { cancelled = true; unsub(); };
   }, []);
 
   const signedIn = Boolean(authUserId);

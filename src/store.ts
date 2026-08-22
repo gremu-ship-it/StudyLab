@@ -15,13 +15,27 @@ function deepClone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v)) as T;
 }
 
+const TABLE_KEYS: (keyof Database)[] = [
+  "institutions", "programmes", "academic_periods", "courses", "course_offerings",
+  "topics", "subtopics", "skills", "topic_skills", "learning_units",
+  "content_resources", "topic_resources", "questions", "question_options",
+  "practicals", "practical_steps", "student_profiles", "enrolments",
+  "student_course_enrolments", "study_sessions", "learning_attempts",
+  "question_attempts", "topic_mastery", "skill_mastery", "review_schedule",
+  "recommendations", "study_plans", "study_plan_items", "uploaded_materials",
+  "ai_conversations", "ai_messages",
+];
+
 function load(): Database {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as Database;
-      // basic shape guard
-      if (parsed && Array.isArray(parsed.courses) && Array.isArray(parsed.topics)) return parsed;
+      const parsed = JSON.parse(raw) as Partial<Database>;
+      // Defensive: ensure every table array exists (older caches may lack new tables).
+      for (const k of TABLE_KEYS) {
+        if (!Array.isArray(parsed[k])) (parsed as Record<string, unknown>)[k] = [];
+      }
+      return parsed as Database;
     }
   } catch {
     /* fall through to seed */
