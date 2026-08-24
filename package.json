@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "db:verify": "node scripts/local-db.mjs"
+    "db:verify": "node scripts/local-db.mjs",
+    "db:bundle": "node scripts/bundle-migrations.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0",

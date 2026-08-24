@@ -11,12 +11,17 @@
 
 import EmbeddedPostgres from "embedded-postgres";
 import { readFileSync, readdirSync, existsSync, mkdirSync, rmSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
-const MIGRATIONS_DIR = join(ROOT, "supabase", "migrations");
+// Overridable so the generated single-file bundle (npm run db:bundle) can be
+// verified through this same gate:
+//   STUDYLAB_MIGRATIONS_DIR=.local-pg/bundle npm run db:verify
+const MIGRATIONS_DIR = process.env.STUDYLAB_MIGRATIONS_DIR
+  ? resolve(ROOT, process.env.STUDYLAB_MIGRATIONS_DIR)
+  : join(ROOT, "supabase", "migrations");
 const DATA_DIR = join(ROOT, ".local-pg");
 const PORT = 54329;
 const DB_NAME = "studylab_verify";

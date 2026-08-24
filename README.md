@@ -108,9 +108,12 @@ to be configured by hand:
    right origin. (If you have restricted CORS in the project's API settings, add
    the Vercel domains there too.)
 4. **Deploy.** The database migrations must already be applied to that Supabase
-   project (`supabase/migrations/*.sql` in order, or `supabase db push`) — see
-   [Database](#database). If the two variables are missing the deployed site
-   does not fail silently: it boots into the honest **Setup** screen.
+   project — `npm run db:bundle` then paste `supabase/deploy-all.sql` into the
+   SQL editor, or `supabase db push`. See [Database](#database). If the two
+   variables are missing the deployed site does not fail silently: it boots into
+   the honest **Setup** screen. If a page instead reports
+   `Could not find the table 'public.…' in the schema cache`, the site *is*
+   connected but that project has no schema yet — run the bundle.
 
 CLI alternative, once the project is linked:
 
@@ -142,11 +145,12 @@ https://<your-project>.supabase.co wss://<your-project>.supabase.co` and
 | `npm run build`   | Type-check + production build                                         |
 | `npm run typecheck` | `tsc -b` across the project                                           |
 | `npm test`        | Vitest: grading, mastery, session planning, recommendations, document extraction, practical activities |
-| `npm run db:verify` | Boots an embedded PostgreSQL, applies **all** `supabase/migrations/*.sql` in order against Supabase stubs, asserts **RLS is enabled on every public table**, prints table/policy/seed counts. Exits 1 on any failure. `node scripts/local-db.mjs --query "<sql>"` queries the persistent local DB. |
+| `npm run db:verify` | Boots an embedded PostgreSQL, applies **all** `supabase/migrations/*.sql` in order against Supabase stubs, asserts **RLS is enabled on every public table**, prints table/policy/seed counts. Exits 1 on any failure. `node scripts/local-db.mjs --query "<sql>"` queries the persistent local DB. Point it at another directory with `STUDYLAB_MIGRATIONS_DIR=<dir>`. |
+| `npm run db:bundle` | Concatenates the migrations into one paste-ready `supabase/deploy-all.sql` for the Supabase SQL editor, adding `drop policy if exists` guards so a re-run cannot abort. Generated file, gitignored — regenerate, don't edit. |
 
 ## Database
 
-Seven migrations (apply in order; all are idempotent):
+Nine migrations, applied in filename order (`0001` first):
 
 | File | Adds |
 | ---- | ---- |
@@ -157,6 +161,33 @@ Seven migrations (apply in order; all are idempotent):
 | `0005_ai_reflection.sql` | `explain_back_attempts` (Feynman mode) — stored immediately, AI evaluation fills `score`/`ai_feedback` later or stays null ("evaluation pending") |
 | `0006_practical_activities.sql` | `activity_attempts` — real records of guided quick-activity completions |
 | `0007_own_draft_visibility.sql` | Authors can read their own draft/review questions & assessments (published rows stay the public surface) |
+| `0008_live_readiness.sql` | v0.2 merge: 12 `add column if not exists`, plus insert/update policies for practicals, practical steps, question options and `topic_resources` that the earlier set missed |
+| `0009_seed_curriculum_content.sql` | LUANAR BSc NAS content seed — topics, subtopics, skills, learning units, resources, questions, practicals, course offerings. Deterministic UUIDs + `ON CONFLICT DO NOTHING` |
+
+**Re-running them:** tables, functions and columns are guarded (`if not
+exists` / `or replace`) and the seed is conflict-guarded, but `create policy`
+has no such form — 93 policies are created and only 6 are dropped first, so a
+second run aborts on `policy "…" already exists`. `npm run db:bundle` fixes
+that in the generated file: it emits a `drop policy if exists` in front of
+every `create policy`. Verified by applying the bundle twice to one fresh
+embedded PostgreSQL (below) — both runs clean, RLS still on every table.
+
+### Applying them to a Supabase project
+
+```bash
+npm run db:bundle     # writes supabase/deploy-all.sql (generated, gitignored)
+```
+
+Paste that one file into the Supabase **SQL Editor** and run it. `db:verify`
+proves it end to end against an embedded PostgreSQL with Supabase stubs:
+**15 courses, 21 topics, 84 policies, RLS enabled on all 44 public tables**.
+To verify the bundle itself rather than the individual files:
+
+```bash
+mkdir -p .bundle-check && cp supabase/deploy-all.sql .bundle-check/
+STUDYLAB_MIGRATIONS_DIR=.bundle-check npm run db:verify
+```
+
 
 **Security model**
 
