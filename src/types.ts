@@ -5,12 +5,20 @@ export type Id = string;
 
 export type UnitType =
   | "explanation"
-  | "video"
+  | "definition"
+  | "example"
   | "worked_example"
+  | "visual"
+  | "formula"
+  | "case_study"
+  | "practice"
+  | "application"
+  | "summary"
+  | "reflection"
+  | "video"
+  | "reading"
   | "interactive"
   | "practical"
-  | "practice"
-  | "reflection"
   | "review";
 
 export type QuestionType =
@@ -21,6 +29,8 @@ export type QuestionType =
   | "matching"
   | "ordering"
   | "scenario";
+
+export type PracticeLevel = 1 | 2 | 3 | 4 | 5;
 
 export type StepType =
   | "objective"
@@ -42,6 +52,25 @@ export type StepStatus = "locked" | "unlocked" | "in_progress" | "completed" | "
 export type MasteryLevel = "not_assessed" | "weak" | "developing" | "strong" | "mastered";
 
 export type SourceLevel = 1 | 2 | 3 | 4;
+
+export type ResourceCategory =
+  | "my_materials"
+  | "open_textbooks"
+  | "university_courses"
+  | "academic_websites"
+  | "videos"
+  | "external_libraries";
+
+export type ResourcePurpose =
+  | "conceptual_understanding"
+  | "visual_explanation"
+  | "worked_examples"
+  | "practice"
+  | "advanced_study"
+  | "exam_preparation"
+  | "lab_practical";
+
+export type BloomLevel = "remember" | "understand" | "apply" | "analyze" | "evaluate" | "create";
 
 // ---------- Curriculum ----------
 
@@ -90,6 +119,9 @@ export interface Topic {
   course_id: Id;
   name: string;
   description: string | null;
+  overview?: string | null;
+  why_it_matters?: string | null;
+  prerequisites_summary?: string | null;
   sequence_number: number | null;
   status: "draft" | "confirmed" | "student_added" | "archived";
   source_type: string | null;
@@ -142,6 +174,8 @@ export interface LearningObjective {
   topic_id: Id | null;
   concept_id: Id | null;
   statement: string;
+  bloom_level?: BloomLevel | null;
+  criteria?: string | null;
   sequence_number: number | null;
   status: "draft" | "active" | "archived";
   source_type: string | null;
@@ -150,22 +184,58 @@ export interface LearningObjective {
 
 // ---------- Content ----------
 
+export interface WorkedExampleStep {
+  step: number;
+  instruction: string;
+  math?: string;
+  explanation: string;
+}
+
+export interface CommonMistake {
+  mistake: string;
+  correction: string;
+  why: string;
+}
+
+export interface LessonContentSections {
+  intuition?: string;
+  formal_definition?: string;
+  notation?: string;
+  worked_examples?: WorkedExampleStep[];
+  common_mistakes?: CommonMistake[];
+  practice_prompt?: string;
+  application_prompt?: string;
+  visual_svg?: string;
+  visual_description?: string;
+  key_takeaways?: string[];
+}
+
 export interface LearningUnit {
   id: Id;
   topic_id: Id;
   subtopic_id: Id | null;
+  concept_id?: Id | null;
+  learning_objective_id?: Id | null;
   title: string;
   unit_type: UnitType;
   sequence_number: number | null;
   description: string | null;
   body: string | null;
   formula: string | null;
+  sections?: LessonContentSections;
   media: Record<string, unknown>;
   estimated_minutes: number | null;
   difficulty: number | null;
   status: "draft" | "review" | "approved" | "archived";
   source_type: string | null;
   source_reference: string | null;
+  source_id?: string | null;
+  source_url?: string | null;
+  source_title?: string | null;
+  page_reference?: string | null;
+  source_level?: SourceLevel | null;
+  confidence?: number | null;
+  provenance?: Record<string, unknown>;
   created_by: Id | null;
 }
 
@@ -190,8 +260,10 @@ export interface Question {
   topic_id: Id;
   subtopic_id: Id | null;
   question_type: QuestionType;
-  difficulty: number;
+  difficulty: number; // 1 to 5
+  difficulty_level?: "recognition" | "basic_application" | "multi_step" | "unfamiliar_problem" | "application_transfer";
   question_text: string;
+  context_scenario?: string | null;
   explanation: string | null;
   hint_1: string | null;
   hint_2: string | null;
@@ -224,6 +296,7 @@ export interface Practical {
   safety_notes: string | null;
   procedure: unknown;
   expected_outcome: string | null;
+  assessment_notes?: string | null;
   status: "draft" | "review" | "approved" | "archived";
 }
 
@@ -232,6 +305,11 @@ export interface Resource {
   title: string;
   description: string | null;
   resource_type: "youtube" | "document" | "website" | "textbook" | "simulation" | "image" | "other";
+  category?: ResourceCategory;
+  purpose?: ResourcePurpose;
+  recommendation_reason?: string | null;
+  course_code?: string | null;
+  page_reference?: string | null;
   url: string | null;
   provider: string | null;
   author: string | null;
@@ -416,7 +494,7 @@ export interface ExplainBackAttempt {
   created_at: string;
 }
 
-// ---------- Assessments (Phase 5) ----------
+// ---------- Assessments ----------
 
 export interface Assessment {
   id: Id;
@@ -456,7 +534,7 @@ export interface AssessmentAttempt {
   created_at: string;
 }
 
-// ---------- Practical activities (Phase 9) ----------
+// ---------- Practical activities ----------
 
 export interface ActivityAttempt {
   id: Id;

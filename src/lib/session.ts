@@ -42,12 +42,20 @@ export interface SessionPlan {
 
 const UNIT_TO_STEP: Record<LearningUnit["unit_type"], StepType> = {
   explanation: "explanation",
-  video: "visual",
+  definition: "definition",
+  example: "example",
   worked_example: "worked_example",
+  visual: "visual",
+  formula: "explanation",
+  case_study: "application",
+  practice: "practice",
+  application: "application",
+  summary: "explanation",
+  reflection: "reflection",
+  video: "visual",
+  reading: "explanation",
   interactive: "practice",
   practical: "practical",
-  practice: "practice",
-  reflection: "reflection",
   review: "practice",
 };
 

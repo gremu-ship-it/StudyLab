@@ -1,8 +1,8 @@
 // Auth + student onboarding context.
 // States:
-//   unconfigured — VITE_SUPABASE_* missing → app shows the setup page
+//   unconfigured — VITE_SUPABASE_* missing → can enter instant Demo Mode or setup
 //   loading      — resolving session
-//   auth         — signed out (show sign in/up)
+//   signed_out   — signed out (show sign in/up or explore demo)
 //   onboarding   — signed in, no profile yet (pick programme/period)
 //   ready        — signed in with profile + enrolment
 
@@ -15,7 +15,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { User } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import * as api from "./api";
 import type { AcademicPeriod, Programme, StudentProfile, User as AppUser } from "../types";
@@ -32,18 +31,48 @@ interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<string | null>;
   signUp: (email: string, password: string, fullName: string) => Promise<string | null>;
   signOut: () => Promise<void>;
+  enterDemoMode: () => void;
   completeOnboarding: (profile: Partial<StudentProfile> & { id: string }) => Promise<void>;
   refresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+const DEMO_USER: AppUser = {
+  id: "demo-student-1",
+  email: "student@luanar.ac.mw",
+};
+
+const DEMO_PROFILE: StudentProfile = {
+  id: "demo-student-1",
+  full_name: "Tiwonge Banda",
+  institution_id: "inst-luanar",
+  programme_id: "prog-nas",
+  current_year: 2,
+  current_semester: 1,
+  timezone: "Africa/Blantyre",
+  study_preferences: {},
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ status: "loading" });
 
+  const enterDemoMode = useCallback(() => {
+    setState({
+      status: "ready",
+      user: DEMO_USER,
+      profile: DEMO_PROFILE,
+    });
+  }, []);
+
   const refresh = useCallback(async () => {
     if (!supabase) {
-      setState({ status: "unconfigured" });
+      // Offline / Demo mode auto-available
+      setState({
+        status: "ready",
+        user: DEMO_USER,
+        profile: DEMO_PROFILE,
+      });
       return;
     }
     const { data: session } = await supabase.auth.getSession();
@@ -78,19 +107,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    if (!supabase) return "Supabase is not configured";
+    if (!supabase) {
+      enterDemoMode();
+      return null;
+    }
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return error.message;
     await refresh();
     return null;
-  }, [refresh]);
+  }, [enterDemoMode, refresh]);
 
   const signUp = useCallback(
     async (email: string, password: string, fullName: string) => {
-      if (!supabase) return "Supabase is not configured";
+      if (!supabase) {
+        enterDemoMode();
+        return null;
+      }
       const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
       if (error) return error.message;
-      // Auto-create the profile row so onboarding is one step.
       if (data.user) {
         try {
           await api.upsertProfile({ id: data.user.id, full_name: fullName });
@@ -101,13 +135,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await refresh();
       return null;
     },
-    [refresh],
+    [enterDemoMode, refresh],
   );
 
   const signOut = useCallback(async () => {
-    await supabase?.auth.signOut();
-    setState({ status: "signed_out" });
-  }, []);
+    if (supabase) {
+      await supabase.auth.signOut();
+      setState({ status: "signed_out" });
+    } else {
+      enterDemoMode();
+    }
+  }, [enterDemoMode]);
 
   const completeOnboarding = useCallback(
     async (profile: Partial<StudentProfile> & { id: string }) => {
@@ -118,8 +156,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ state, signIn, signUp, signOut, completeOnboarding, refresh }),
-    [state, signIn, signUp, signOut, completeOnboarding, refresh],
+    () => ({ state, signIn, signUp, signOut, enterDemoMode, completeOnboarding, refresh }),
+    [state, signIn, signUp, signOut, enterDemoMode, completeOnboarding, refresh],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

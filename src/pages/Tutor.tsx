@@ -78,7 +78,7 @@ export function TutorPage() {
   );
   const topicMasteryQ = useQuery(api.getTopicMastery, []);
 
-  const [mode, setMode] = useState<"chat" | "feynman">("chat");
+  const [mode, setMode] = useState<"chat" | "feynman">(route.query.mode === "feynman" ? "feynman" : "chat");
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<{ role: "user" | "assistant"; content: string; meta?: Record<string, unknown> }[]>([]);
   const [input, setInput] = useState("");
@@ -96,6 +96,15 @@ export function TutorPage() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
+
+  // If task query param is present on mount, automatically trigger it
+  useEffect(() => {
+    if (route.query.task && !messages.length && user) {
+      const task = route.query.task as AiContextPayload["task"];
+      void send(quickPrompt(task), task);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.query.task, user]);
 
   const weakConcepts = useMemo(() => {
     const byId = new Map((conceptsQ.data ?? []).map((c) => [c.id, c.name]));
