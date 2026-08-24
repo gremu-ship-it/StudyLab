@@ -171,6 +171,32 @@ export function sm2(state: Sm2State, quality: number, now: Date = new Date()): S
   return { intervalDays, easeFactor, nextInDays: intervalDays };
 }
 
+// ---------------------------------------------------------------------------
+// Source-grounded mastery: links mastery estimates to extracted concepts
+// ---------------------------------------------------------------------------
+
+export interface SourceGroundedMastery {
+  conceptName: string;
+  sourceMaterialId?: string;
+  sourceDocumentName?: string;
+  provenance?: string;
+  estimate: MasteryEstimate;
+}
+
+export function buildGroundedMastery(
+  conceptName: string,
+  attempts: AttemptRecord[],
+  provenance?: { materialId: string; documentName: string; page?: number; heading?: string },
+): SourceGroundedMastery {
+  return {
+    conceptName,
+    sourceMaterialId: provenance?.materialId,
+    sourceDocumentName: provenance?.documentName,
+    provenance: provenance ? `${provenance.documentName}${provenance.page ? ` p.${provenance.page}` : ""}${provenance.heading ? ` · "${provenance.heading}"` : ""}` : undefined,
+    estimate: estimateMastery(attempts),
+  };
+}
+
 export function qualityFromScore(score: number): number {
   if (score < 50) return 2;
   if (score < 65) return 3;

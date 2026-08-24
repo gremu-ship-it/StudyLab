@@ -53,6 +53,20 @@ export function sourceBanner(level: SourceLevel | null | undefined): string {
  * student/lecturer material first, then academic, then curated external,
  * and only then AI's own text.
  */
+export function provenanceText(
+  materialName: string,
+  page: number | null,
+  heading: string | null,
+  confidence: number,
+): string {
+  const parts: string[] = [];
+  if (materialName) parts.push(materialName);
+  if (page != null) parts.push(`page ${page}`);
+  if (heading) parts.push(`"${heading}"`);
+  parts.push(`confidence ${Math.round(confidence * 100)}%`);
+  return parts.join(" · ");
+}
+
 export function sourcePriority(level: SourceLevel | null | undefined): number {
   return level ?? 4;
 }
