@@ -1,8 +1,11 @@
-// Shown when VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are missing.
+// Shown when no Supabase backend is configured — neither the build-time
+// VITE_SUPABASE_* variables nor a pair saved in this browser.
 // Honest unconfigured state — no fake data behind this screen.
 
-import { Database, ShieldCheck } from "lucide-react";
-import { Card } from "../components/ui";
+import { useState } from "react";
+import { Database, KeyRound, Link2, ShieldCheck } from "lucide-react";
+import { Button, Card, Field, Spinner } from "../components/ui";
+import { saveBrowserConfig } from "../lib/supabase";
 
 export function SetupPage() {
   return (
@@ -20,7 +23,8 @@ export function SetupPage() {
           <div>
             <h3>Create a Supabase project</h3>
             <p>
-              From your project dashboard copy the <code>Project URL</code> and the <code>anon public key</code>.
+              From your project dashboard copy the <code>Project URL</code> and the <code>anon public key</code>
+              (Project Settings → API Keys).
             </p>
           </div>
         </div>
@@ -36,16 +40,25 @@ export function SetupPage() {
         </div>
         <div className="setup-step">
           <div className="setup-num">3</div>
-          <div>
-            <h3>Configure the environment</h3>
+          <div className="setup-step-body">
+            <h3>
+              <Link2 size={14} /> Connect this browser
+            </h3>
             <p>
-              Copy <code>.env.example</code> to <code>.env</code> and set:
+              Paste the two values below to start using StudyLab right now. They are stored in this browser only —
+              nothing is uploaded anywhere except to your own Supabase project.
             </p>
-            <pre className="code">
-              {`VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key`}
-            </pre>
-            <p>Then restart the dev server.</p>
+            <ConnectForm />
+            <div className="setup-alt">
+              <KeyRound size={14} />
+              <p>
+                <strong>Deploying instead?</strong> Set <code>VITE_SUPABASE_URL</code> and{" "}
+                <code>VITE_SUPABASE_ANON_KEY</code> as build-time environment variables (on Vercel: Project →
+                Settings → Environment Variables, then redeploy). Those always take precedence over the pair saved
+                here. For local development, copy <code>.env.example</code> to <code>.env</code> and restart the dev
+                server.
+              </p>
+            </div>
           </div>
         </div>
         <div className="setup-step">
@@ -65,10 +78,58 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
           <Database size={16} />
           <p>
             Security: all student data is protected by RLS, uploads go to a private bucket, and AI keys live only in
-            Edge Function secrets — never in the browser.
+            Edge Function secrets — never in the browser. The key you paste here is the public client key (legacy{" "}
+            <code>eyJ…</code> anon or new <code>sb_publishable_…</code>); a secret key is rejected.
           </p>
         </div>
       </Card>
     </section>
+  );
+}
+
+function ConnectForm() {
+  const [url, setUrl] = useState("");
+  const [anonKey, setAnonKey] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  function connect() {
+    setBusy(true);
+    const err = saveBrowserConfig(url, anonKey);
+    if (err) {
+      setError(err);
+      setBusy(false);
+      return;
+    }
+    // The Supabase client is created once at module load, so reload to rebuild it.
+    window.location.reload();
+  }
+
+  return (
+    <div className="setup-form">
+      <Field
+        label="Project URL"
+        value={url}
+        onChange={setUrl}
+        placeholder="https://your-project.supabase.co"
+        spellCheck={false}
+      />
+      <Field
+        label="Anon (publishable) key"
+        value={anonKey}
+        onChange={setAnonKey}
+        placeholder="eyJ… or sb_publishable_…"
+        hint="Project Settings → API Keys → anon public. Never the secret key."
+        spellCheck={false}
+      />
+      {error && (
+        <div className="error-note" role="alert">
+          {error}
+        </div>
+      )}
+      <Button onClick={connect} disabled={busy || !url.trim() || !anonKey.trim()}>
+        {busy ? <Spinner label="Connecting…" /> : "Connect StudyLab"}
+      </Button>
+    </div>
   );
 }

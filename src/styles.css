@@ -345,3 +345,11 @@
 
 @media(max-width:1000px){.activity-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:760px){.activity-grid,.pick-grid{grid-template-columns:1fr}.qbank-row{grid-template-columns:1fr}.activity-tile{grid-template-columns:36px 1fr}.activity-tile .arrow{display:none}}
+
+/* ============ connect-this-browser setup form ============ */
+.setup-step-body{flex:1;min-width:0}
+.setup-form{display:grid;gap:12px;max-width:540px;margin-top:12px}
+.setup-alt{display:flex;gap:10px;background:#f5f7f9;border:1px solid #e5e9ef;border-radius:10px;padding:12px;font-size:12px;color:#5b6b82;margin-top:14px}
+.setup-alt p{margin:0;line-height:1.6}
+.conn-line{display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;font-size:11px;color:#8b96a8;margin-top:14px}
+.conn-line code{background:#f0f3f7;border-radius:4px;padding:1px 5px;color:#5b6b82}

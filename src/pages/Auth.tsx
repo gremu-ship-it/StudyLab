@@ -2,7 +2,34 @@ import { useState } from "react";
 import { GraduationCap } from "lucide-react";
 import * as api from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { activeConfig, clearBrowserConfig } from "../lib/supabase";
+import { hostOf } from "../lib/supabase-config";
 import { Button, ErrorNote, Field, Select, Spinner } from "../components/ui";
+
+/**
+ * When the connection came from the Setup screen rather than build-time env
+ * vars, say so and offer a way out — otherwise a mis-pasted project would
+ * leave the student stranded on this screen with no way back to the form.
+ */
+function ConnectionLine() {
+  if (activeConfig?.source !== "browser") return null;
+  return (
+    <div className="conn-line">
+      <span>
+        Connected in this browser to <code>{hostOf(activeConfig.url)}</code>
+      </span>
+      <button
+        className="text-btn"
+        onClick={() => {
+          clearBrowserConfig();
+          window.location.reload();
+        }}
+      >
+        Change
+      </button>
+    </div>
+  );
+}
 
 export function AuthPage() {
   const { state, signIn, signUp } = useAuth();
@@ -49,6 +76,8 @@ export function AuthPage() {
         <Button full onClick={submit} disabled={busy}>
           {busy ? <Spinner label="One moment…" /> : mode === "in" ? "Sign in" : "Create account"}
         </Button>
+
+        <ConnectionLine />
       </div>
     </div>
   );

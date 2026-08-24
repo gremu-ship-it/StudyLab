@@ -125,6 +125,7 @@ export function Field({
   type = "text",
   rows,
   hint,
+  spellCheck,
 }: {
   label: string;
   value: string;
@@ -133,14 +134,28 @@ export function Field({
   type?: string;
   rows?: number;
   hint?: string;
+  /** Turn off for pasted tokens/URLs so the browser stops underlining them. */
+  spellCheck?: boolean;
 }) {
   return (
     <label className="field">
       <span>{label}</span>
       {rows ? (
-        <textarea rows={rows} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
+        <textarea
+          rows={rows}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          spellCheck={spellCheck}
+        />
       ) : (
-        <input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
+        <input
+          type={type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          spellCheck={spellCheck}
+        />
       )}
       {hint && <small className="field-hint">{hint}</small>}
     </label>

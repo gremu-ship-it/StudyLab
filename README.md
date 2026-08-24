@@ -51,6 +51,11 @@ cp .env.example .env        # VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY
 npm run dev                 # without .env the app shows an honest setup screen
 ```
 
+No `.env`? The Setup screen also takes a **Project URL + anon key** and saves
+them to that browser (localStorage), so you can connect a hosted deployment or
+try someone else's project without rebuilding. Build-time `VITE_*` values
+always win over a browser-saved pair, and a secret key is rejected by the form.
+
 ## Deploy to Vercel
 
 The frontend is a static SPA, so Vercel only has to serve the built `dist/` —
@@ -88,6 +93,11 @@ to be configured by hand:
    one needs a redeploy (Deployments → ⋯ → Redeploy). The anon key is public by
    design; the `service_role` key must never be added here (or anywhere in the
    frontend).
+
+   Rather not bake them in? Leave them unset and connect from the deployed
+   **Setup** screen instead — it stores a Project URL + anon key in that
+   browser only. Useful for previews and demos; env vars stay the right answer
+   for a production domain.
 3. **Point Supabase Auth at the deployed URL** — Authentication → URL
    Configuration: set *Site URL* to the production origin
    (`https://<your-app>.vercel.app`). Sign-up confirmation emails link back to
@@ -204,8 +214,9 @@ and runtime cannot drift.
 Every phase ships with: `npm run typecheck` · `npm test` · `npm run build` ·
 `npm run db:verify` (migrations + RLS) · manual smoke of the changed surface.
 Pure engines live in `src/lib/` (`answer`, `mastery`, `session`,
-`recommendations`, `sources`, `progress`, `practical-activities`) and are
-covered by Vitest.
+`recommendations`, `sources`, `progress`, `practical-activities`,
+`supabase-config`) and are covered by Vitest; `test/supabase-connection.test.ts`
+covers which connection source wins at runtime.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full 8-part
 assessment: current architecture, reusable components, gaps, DB/API/UI/AI
