@@ -7,6 +7,7 @@ import {
   ClipboardList,
   GraduationCap,
   LayoutDashboard,
+  Library,
   LogOut,
   Map as MapIcon,
   Menu,
@@ -25,6 +26,7 @@ import { SessionRunner } from "./pages/SessionRunner";
 import { MaterialsPage } from "./pages/Materials";
 import { KnowledgeMapPage } from "./pages/KnowledgeMap";
 import { TutorPage } from "./pages/Tutor";
+import { LibraryPage } from "./pages/Library";
 import * as api from "./lib/api";
 import { Spinner } from "./components/ui";
 import { useQuery } from "./lib/auth";
@@ -76,6 +78,7 @@ function Routed() {
 
     if (route.path === "/" || route.path === "") return <Dashboard />;
     if (route.path === "/courses") return <CoursesPage />;
+    if (route.path === "/library") return <LibraryPage />;
     if (route.path === "/materials") return <MaterialsPage />;
     if (route.path === "/map") return <KnowledgeMapPage />;
     if (route.path === "/tutor") return <TutorPage />;
@@ -134,6 +137,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   const nav = [
     ["/", "Dashboard", LayoutDashboard],
     ["/courses", "My Courses", BookOpen],
+    ["/library", "Library & OER", Library],
     ["/materials", "Course Material", ClipboardList],
     ["/map", "Knowledge Map", Network],
     ["/tutor", "AI Tutor", Brain],
@@ -191,7 +195,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           </button>
           <div className="search">
             <Search size={17} />
-            <input placeholder="Coming soon: search topics, questions and resources" disabled />
+            <input placeholder="Search topics, questions, concepts and textbooks..." />
           </div>
           <Link to="/tutor" className="icon-btn" title="AI Tutor">
             <Brain size={19} />
