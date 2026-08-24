@@ -1,0 +1,13 @@
+# Files that are never needed to build or serve the StudyLab frontend.
+# The Vercel build only runs `npm run build` (tsc -b + vite build) over
+# src/ + vite.config.ts and ships dist/. Everything below stays in Git and
+# in local development, it just does not get uploaded.
+.local-pg/
+.vercel/
+docs/
+parked/
+scripts/
+supabase/
+test/
+.env
+.env.*

@@ -14,7 +14,7 @@ seed**, never as a hard-coded product limit.
 
 ## Stack
 
-- **Frontend** — React 19 + TypeScript + Vite (hash router, no demo data)
+- **Frontend** — React 19 + TypeScript + Vite (hash router, no demo data), served as a static build on Vercel (`vercel.json`)
 - **Backend** — Supabase: PostgreSQL (RLS on every table), Auth, Storage, Edge Functions
 - **AI** — Anthropic or OpenAI, called **only from Edge Functions**; keys never reach the browser
 - **Local tooling** — embedded PostgreSQL migration harness + Vitest unit tests
@@ -50,6 +50,79 @@ npm install
 cp .env.example .env        # VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY
 npm run dev                 # without .env the app shows an honest setup screen
 ```
+
+## Deploy to Vercel
+
+The frontend is a static SPA, so Vercel only has to serve the built `dist/` —
+there are no Vercel serverless functions in this project. Supabase stays where
+it is: Auth, Postgres, Storage and the two Edge Functions keep running on
+Supabase, and the deployed app talks to them directly from the browser using
+the public anon key (RLS is the security boundary).
+
+[`vercel.json`](vercel.json) pins the deployment so the dashboard does not have
+to be configured by hand:
+
+| Key | Value | Why |
+| --- | ----- | --- |
+| `framework` | `vite` | Vite preset |
+| `installCommand` | `npm ci --no-audit --no-fund` | Reproducible from `package-lock.json` |
+| `buildCommand` | `npm run build` | `tsc -b && vite build` — the type-check is part of the gate |
+| `outputDirectory` | `dist` | Vite's production output |
+| `rewrites` | `/(.*) → /index.html` | SPA fallback for any deep path |
+| `headers` | immutable `/assets/*`, no-cache `/`, `nosniff` / `X-Frame-Options` / `Referrer-Policy` / `Permissions-Policy` | Hashed assets cache for a year; HTML always revalidates |
+
+### Steps
+
+1. **Import the repo** at <https://vercel.com/new> and pick the StudyLab
+   repository. Framework preset, install/build commands and output directory
+   are read from `vercel.json` — leave those fields untouched.
+2. **Set the environment variables** (Project → Settings → Environment
+   Variables) for **Production** and **Preview**:
+
+   | Name | Value |
+   | ---- | ----- |
+   | `VITE_SUPABASE_URL` | `https://<your-project>.supabase.co` |
+   | `VITE_SUPABASE_ANON_KEY` | the `anon` **public** key |
+
+   `VITE_*` values are inlined into the bundle at **build time**, so changing
+   one needs a redeploy (Deployments → ⋯ → Redeploy). The anon key is public by
+   design; the `service_role` key must never be added here (or anywhere in the
+   frontend).
+3. **Point Supabase Auth at the deployed URL** — Authentication → URL
+   Configuration: set *Site URL* to the production origin
+   (`https://<your-app>.vercel.app`). Sign-up confirmation emails link back to
+   *Site URL* and the hash router picks the session up from there. Also add the
+   preview pattern `https://*-<your-vercel-team>.vercel.app/**` to *Redirect
+   URLs* — Supabase supports `*`/`**` wildcards — so preview deployments work
+   now and any future OAuth / magic-link / password-reset flow redirects to the
+   right origin. (If you have restricted CORS in the project's API settings, add
+   the Vercel domains there too.)
+4. **Deploy.** The database migrations must already be applied to that Supabase
+   project (`supabase/migrations/*.sql` in order, or `supabase db push`) — see
+   [Database](#database). If the two variables are missing the deployed site
+   does not fail silently: it boots into the honest **Setup** screen.
+
+CLI alternative, once the project is linked:
+
+```bash
+npm i -g vercel
+vercel link
+vercel env add VITE_SUPABASE_URL      # paste the project URL
+vercel env add VITE_SUPABASE_ANON_KEY # paste the anon public key
+vercel build --prod                   # local dry-run of the production build
+vercel --prod                         # ship it
+```
+
+Local dry-run without the CLI: `npm run build && npm run preview` and open the
+printed URL — that is the same `dist/` Vercel serves (minus the `vercel.json`
+headers/rewrite, which only Vercel's edge applies).
+
+**Content-Security-Policy is deliberately not set.** The Supabase origin comes
+from an environment variable (so a project on a custom or self-hosted domain
+would be blocked by a hard-coded `connect-src`), and the UI sets inline
+`style` attributes. If you want one, add `connect-src 'self'
+https://<your-project>.supabase.co wss://<your-project>.supabase.co` and
+`style-src 'self' 'unsafe-inline'` to the `headers` array.
 
 ## Scripts
 
