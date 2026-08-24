@@ -13,12 +13,15 @@ import EmbeddedPostgres from "embedded-postgres";
 import { readFileSync, readdirSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildBundle } from "./bundle-migrations.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
 // Overridable so the generated single-file bundle (npm run db:bundle) can be
-// verified through this same gate:
-//   STUDYLAB_MIGRATIONS_DIR=.local-pg/bundle npm run db:verify
+// verified through this same gate. Keep the directory OUTSIDE .local-pg — this
+// harness deletes .local-pg before applying anything:
+//   mkdir -p .bundle-check && cp supabase/deploy-all.sql .bundle-check/
+//   STUDYLAB_MIGRATIONS_DIR=.bundle-check npm run db:verify
 const MIGRATIONS_DIR = process.env.STUDYLAB_MIGRATIONS_DIR
   ? resolve(ROOT, process.env.STUDYLAB_MIGRATIONS_DIR)
   : join(ROOT, "supabase", "migrations");
@@ -80,8 +83,33 @@ function sqlFiles() {
     .sort();
 }
 
+/**
+ * supabase/deploy-all.sql is committed so it can be pasted into the Supabase
+ * SQL editor, which means it can drift from the migrations it was built from.
+ * Fail the gate when it does, rather than letting a stale schema reach a real
+ * project.
+ */
+function assertBundleFresh() {
+  const bundlePath = join(ROOT, "supabase", "deploy-all.sql");
+  if (!existsSync(bundlePath)) {
+    console.error("[db] supabase/deploy-all.sql is missing — run `npm run db:bundle`");
+    process.exit(1);
+  }
+  const committed = readFileSync(bundlePath, "utf8");
+  const fresh = buildBundle();
+  if (committed !== fresh) {
+    console.error(
+      "[db] supabase/deploy-all.sql is STALE — it does not match supabase/migrations/*.sql.\n" +
+        "[db] run `npm run db:bundle` and commit the regenerated file.",
+    );
+    process.exit(1);
+  }
+  console.log("[db] supabase/deploy-all.sql matches the migrations (not stale)");
+}
+
 async function main() {
   const wantQuery = process.argv.includes("--query");
+  if (!wantQuery) assertBundleFresh();
 
   const pg = new EmbeddedPostgres({
     databaseDir: DATA_DIR,

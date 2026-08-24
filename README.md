@@ -146,7 +146,7 @@ https://<your-project>.supabase.co wss://<your-project>.supabase.co` and
 | `npm run typecheck` | `tsc -b` across the project                                           |
 | `npm test`        | Vitest: grading, mastery, session planning, recommendations, document extraction, practical activities |
 | `npm run db:verify` | Boots an embedded PostgreSQL, applies **all** `supabase/migrations/*.sql` in order against Supabase stubs, asserts **RLS is enabled on every public table**, prints table/policy/seed counts. Exits 1 on any failure. `node scripts/local-db.mjs --query "<sql>"` queries the persistent local DB. Point it at another directory with `STUDYLAB_MIGRATIONS_DIR=<dir>`. |
-| `npm run db:bundle` | Concatenates the migrations into one paste-ready `supabase/deploy-all.sql` for the Supabase SQL editor, adding `drop policy if exists` guards so a re-run cannot abort. Generated file, gitignored — regenerate, don't edit. |
+| `npm run db:bundle` | Concatenates the migrations into one paste-ready `supabase/deploy-all.sql` for the Supabase SQL editor, adding `drop policy if exists` guards so a re-run cannot abort. The output is committed so it can be pasted straight into the SQL editor; `db:verify` fails if it drifts from the migrations. |
 
 ## Database
 
@@ -175,10 +175,12 @@ embedded PostgreSQL (below) — both runs clean, RLS still on every table.
 ### Applying them to a Supabase project
 
 ```bash
-npm run db:bundle     # writes supabase/deploy-all.sql (generated, gitignored)
+npm run db:bundle     # regenerates supabase/deploy-all.sql
 ```
 
-Paste that one file into the Supabase **SQL Editor** and run it. `db:verify`
+`supabase/deploy-all.sql` is committed to the repo, so you can open it
+directly — regenerate it only after changing a migration. Paste the whole
+file into the Supabase **SQL Editor** and run it. `db:verify`
 proves it end to end against an embedded PostgreSQL with Supabase stubs:
 **15 courses, 21 topics, 84 policies, RLS enabled on all 44 public tables**.
 To verify the bundle itself rather than the individual files:

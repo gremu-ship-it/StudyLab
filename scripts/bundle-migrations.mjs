@@ -15,7 +15,7 @@
 
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const MIGRATIONS_DIR = join(ROOT, "supabase", "migrations");
@@ -71,12 +71,19 @@ export function buildBundle(dir = MIGRATIONS_DIR) {
 }
 
 const bundle = buildBundle();
-mkdirSync(dirname(OUT), { recursive: true });
-writeFileSync(OUT, bundle);
 
-const lines = bundle.split("\n").length;
-const drops = (bundle.match(/^drop policy if exists /gim) ?? []).length;
-console.log(`[bundle] ${migrationFiles().length} migrations -> supabase/deploy-all.sql`);
-console.log(`[bundle] ${lines} lines, ${(Buffer.byteLength(bundle) / 1024).toFixed(1)} kB`);
-console.log(`[bundle] ${drops} "drop policy if exists" guards added so a re-run cannot abort`);
-console.log(`[bundle] written to ${resolve(OUT)}`);
+// Only write when run directly (`npm run db:bundle`); scripts/local-db.mjs
+// imports buildBundle() to check the committed copy is not stale.
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isMain) {
+  mkdirSync(dirname(OUT), { recursive: true });
+  writeFileSync(OUT, bundle);
+
+  const lines = bundle.split("\n").length;
+  const drops = (bundle.match(/^drop policy if exists /gim) ?? []).length;
+  console.log(`[bundle] ${migrationFiles().length} migrations -> supabase/deploy-all.sql`);
+  console.log(`[bundle] ${lines} lines, ${(Buffer.byteLength(bundle) / 1024).toFixed(1)} kB`);
+  console.log(`[bundle] ${drops} "drop policy if exists" guards added so a re-run cannot abort`);
+  console.log(`[bundle] written to ${resolve(OUT)}`);
+}
