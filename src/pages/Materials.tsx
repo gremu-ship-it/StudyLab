@@ -92,10 +92,7 @@ export function MaterialsPage() {
           <Upload size={22} />
           <div>
             <h3>Upload a document</h3>
-            <p className="mut small">
-              .txt and .md are extracted immediately by the server-side pipeline. PDF/PowerPoint/Word extraction is
-              pending in this build — the upload and metadata still work, and the file is stored securely.
-            </p>
+            <p className="mut small">When a document is uploaded: store original → create processing job → extract text → detect sections, concepts, definitions, formulas, examples, questions, objectives, activities → determine course/topic → build/update knowledge graph → generate learning units/practice/assessment → update path. The document is NOT complete just because it exists in Library — it must contribute active knowledge.</p>
           </div>
         </div>
         <div className="upload-actions">

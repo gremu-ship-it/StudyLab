@@ -383,6 +383,8 @@ export interface ExtractedItem {
   confidence: number;
   concept_id: Id | null;
   question_id: Id | null;
+  source_document_name: string | null;
+  source_material_name: string | null;
 }
 
 export interface AiConversation {
