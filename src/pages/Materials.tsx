@@ -1,142 +1,248 @@
-import { useRef, useState } from "react";
-import { BookOpenCheck, FileText, FileUp, Play, Sparkles, Trash2, Upload } from "lucide-react";
-import { useStore, store } from "../store";
-import type { NavFn } from "../App";
-import { fmtBytes, timeAgo, toast } from "../components/ui";
+// Course material: private uploads → server-side extraction → structured
+// content with provenance. The original file is never modified.
 
-export function MaterialsPage({ nav }: { nav: NavFn }) {
-  const db = useStore((d) => d);
-  const sid = store.studentId;
-  const [drag, setDrag] = useState(false);
-  const [courseId, setCourseId] = useState("");
-  const [topicId, setTopicId] = useState("");
-  const [notes, setNotes] = useState("");
-  const [notesOpen, setNotesOpen] = useState(false);
+import { useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronRight, FileText, PlayCircle, Trash2, Upload, Zap } from "lucide-react";
+import * as api from "../lib/api";
+import { useAuth, useQuery } from "../lib/auth";
+import { sourceBanner } from "../lib/sources";
+import {
+  Button,
+  Card,
+  Empty,
+  ErrorNote,
+  Field,
+  Select,
+  Spinner,
+} from "../components/ui";
+import { useRoute } from "../router";
+import type { ExtractedItem, UploadedMaterial } from "../types";
+
+const ITEM_LABELS: Record<ExtractedItem["item_type"], string> = {
+  heading: "Heading",
+  definition: "Definition",
+  formula: "Formula",
+  example: "Example",
+  question: "Question / problem",
+  objective: "Learning objective",
+  activity: "Practical activity",
+  concept: "Concept",
+  relationship: "Concept relationship",
+};
+
+export function MaterialsPage() {
+  const { state } = useAuth();
+  const user = state.status === "ready" ? state.user : null;
+  const profile = state.status === "ready" ? state.profile : null;
+  const route = useRoute();
+
+  const [file, setFile] = useState<File | null>(null);
+  const [topicId, setTopicId] = useState(route.query.topic ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const materials = db.uploaded_materials.filter((m) => m.student_id === sid);
-  const courseTopics = courseId ? db.topics.filter((t) => t.course_id === courseId) : [];
+  const materialsQ = useQuery(api.getMaterials, [user?.id]);
+  const coursesQ = useQuery(
+    () => (profile?.programme_id ? api.getCourses(profile.programme_id) : Promise.resolve([])),
+    [profile?.programme_id],
+  );
+  const topicsQ = useQuery(async () => {
+    const courses = coursesQ.data ?? [];
+    return courses.length ? api.getTopicsForCourses(courses.map((c) => c.id)) : [];
+  }, [(coursesQ.data ?? []).map((c) => c.id).join(",")]);
 
-  function handleFiles(files: FileList | null) {
-    if (!files || !files.length) return;
-    Array.from(files).forEach((f) => store.uploadMaterial(f, courseId || null, topicId || null));
-    toast(`${files.length} file${files.length === 1 ? "" : "s"} uploaded — building study pack`);
-  }
+  const courseName = (id: string | null) => coursesQ.data?.find((c) => c.id === id)?.name ?? "";
+  const topicName = (id: string | null) => topicsQ.data?.find((t) => t.id === id)?.name ?? "";
 
-  /** Upload pasted/typed notes as a text "document". */
-  function saveNotes() {
-    if (!notes.trim()) return;
-    const blob = new Blob([notes.trim()], { type: "text/plain" });
-    const file = new File([blob], "Study notes.txt", { type: "text/plain" });
-    store.uploadMaterial(file, courseId || null, topicId || null);
-    setNotes(""); setNotesOpen(false);
-    toast("Notes turned into study units & questions");
+  async function upload() {
+    if (!user || !file) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.uploadMaterial({
+        file,
+        student_id: user.id,
+        topic_id: topicId || null,
+        course_id: topicId ? topicsQ.data?.find((t) => t.id === topicId)?.course_id ?? null : null,
+      });
+      setFile(null);
+      setTopicId("");
+      if (inputRef.current) inputRef.current.value = "";
+      materialsQ.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
     <section className="page">
       <div className="page-heading">
         <div>
-          <span className="eyebrow">Study from your materials</span>
-          <h1>Materials</h1>
-          <p>Upload lecture notes, slides, readings or paste text. StudyLab turns each document into study units, key terms, comprehension &amp; application questions, and review — so you actually learn it, not just see MCQs.</p>
+          <span className="eyebrow">SOURCE LEVEL 1 — YOUR COURSE MATERIAL</span>
+          <h1>Course material</h1>
+          <p>Lecture notes, slides, lab manuals and past papers. Files are stored privately and never modified.</p>
         </div>
       </div>
 
-      <div className="grid-2" style={{ marginBottom: 18, alignItems: "start" }}>
-        <div
-          className={`dropzone ${drag ? "drag" : ""}`}
-          onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-          onDragLeave={() => setDrag(false)}
-          onDrop={(e) => { e.preventDefault(); setDrag(false); handleFiles(e.dataTransfer.files); }}
-          onClick={() => inputRef.current?.click()}
-        >
-          <FileUp size={36} />
-          <h2>Drop a document</h2>
-          <p>PDF, Word, PowerPoint, text, markdown or images · readable text (.txt/.md) becomes a full study pack instantly</p>
-          <input ref={inputRef} type="file" multiple style={{ display: "none" }}
-            accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,.md,.png,.jpg,.jpeg"
-            onChange={(e) => handleFiles(e.target.files)} />
-        </div>
-
-        <div className="panel">
-          <h3 style={{ marginBottom: 12 }}>File it & add text</h3>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <label>Course (optional)
-              <select value={courseId} onChange={(e) => { setCourseId(e.target.value); setTopicId(""); }}>
-                <option value="">Unfiled</option>
-                {db.courses.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
-              </select>
-            </label>
-            <label>Topic (optional)
-              <select value={topicId} onChange={(e) => setTopicId(e.target.value)} disabled={!courseId}>
-                <option value="">General course material</option>
-                {courseTopics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
-            </label>
-            <button className="secondary" onClick={() => setNotesOpen((v) => !v)}>
-              <Sparkles size={15} /> {notesOpen ? "Hide" : "Paste notes / text to study"}
-            </button>
-            {notesOpen && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Paste a reading, lecture excerpt or your own notes. StudyLab will split it into units, pull out key terms and write comprehension questions..."
-                  style={{ minHeight: 140 }} />
-                <button className="primary" onClick={saveNotes} disabled={!notes.trim()}><BookOpenCheck size={15} /> Turn into study pack</button>
-              </div>
-            )}
-            <p className="muted" style={{ fontSize: 12 }}>Each processed document appears as its own topic with units and questions. Open it to study, then practise and review.</p>
+      <Card className="upload-card">
+        <div className="upload-row">
+          <Upload size={22} />
+          <div>
+            <h3>Upload a document</h3>
+            <p className="mut small">
+              .txt and .md are extracted immediately by the server-side pipeline. PDF/PowerPoint/Word extraction is
+              pending in this build — the upload and metadata still work, and the file is stored securely.
+            </p>
           </div>
         </div>
-      </div>
+        <div className="upload-actions">
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,.md,.png,.jpg"
+            style={{ display: "none" }}
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          />
+          <Button variant="secondary" onClick={() => inputRef.current?.click()}>
+            Choose file…
+          </Button>
+          <span className="mut small">{file ? `${file.name} (${Math.round(file.size / 1024)} KB)` : "No file selected"}</span>
+          <Select
+            value={topicId}
+            onChange={setTopicId}
+            options={[
+              { value: "", label: "Link to topic (optional)" },
+              ...(topicsQ.data ?? []).map((t) => ({
+                value: t.id,
+                label: `${courseName(t.course_id)} — ${t.name}`,
+              })),
+            ]}
+          />
+          <Button onClick={upload} disabled={!file || busy}>
+            {busy ? "Uploading…" : "Upload"}
+          </Button>
+        </div>
+        {error && <ErrorNote message={error} />}
+      </Card>
 
-      <div className="section-head"><h2>Your materials ({materials.length})</h2></div>
-      {materials.length === 0 ? (
-        <div className="empty-state"><FileText size={32} /><h2>No materials yet</h2><p>Upload a document or paste notes to build your first study pack.</p></div>
+      {materialsQ.loading ? (
+        <Spinner label="Loading materials…" />
+      ) : (materialsQ.data ?? []).length === 0 ? (
+        <Empty
+          icon={<FileText size={36} />}
+          title="No material uploaded yet"
+          body="Upload the notes from your last lecture. StudyLab keeps the original file untouched, extracts its structure server-side, and shows every extracted item with its provenance."
+        />
       ) : (
-        <div className="list">
-          {materials.map((m) => {
-            const course = m.course_id ? db.courses.find((c) => c.id === m.course_id) : null;
-            const studyTopic = m.topic_id ? db.topics.find((t) => t.id === m.topic_id) : null;
-            const ai = m.ai_classification as (Record<string, unknown> | null);
-            const qCount = ai?.questions as number | undefined;
-            const uCount = ai?.units as number | undefined;
-            return (
-              <div key={m.id} className="upload-row">
-                <div className="ico"><FileText size={18} /></div>
-                <div className="meta">
-                  <strong>{m.file_name}</strong>
-                  <span>{fmtBytes(m.file_size)} · {course?.code ?? "unfiled"} · {timeAgo(m.created_at)}</span>
-                  {studyTopic ? (
-                    <div className="row" style={{ marginTop: 6 }}>
-                      <span className="chip good"><BookOpenCheck size={12} /> Study pack ready</span>
-                      <span className="chip brand">{uCount ?? "—"} units</span>
-                      <span className="chip brand">{qCount ?? "—"} questions</span>
-                      <span className="muted" style={{ fontSize: 11 }}>from your document</span>
-                    </div>
-                  ) : m.processing_status === "processing" ? (
-                    <span className="chip warn" style={{ marginTop: 6 }}>processing…</span>
-                  ) : (
-                    <span className="chip muted" style={{ marginTop: 6 }}>stored — paste its text to generate study units</span>
-                  )}
-                </div>
-                <span className={`chip ${m.processing_status === "ready" ? "good" : m.processing_status === "failed" ? "bad" : "warn"}`}>{m.processing_status}</span>
-                {studyTopic && (
-                  <>
-                    <button className="secondary small" onClick={() => nav({ name: "ai", topicId: studyTopic.id, courseId: studyTopic.course_id })}>
-                      <Sparkles size={13} /> Ask AI
-                    </button>
-                    <button className="primary small" onClick={() => nav({ name: "course", courseId: studyTopic.course_id })}>
-                      <Play size={13} /> Study
-                    </button>
-                  </>
-                )}
-                <button className="ghost small danger" onClick={() => store.remove("uploaded_materials", m.id)}><Trash2 size={14} /></button>
-              </div>
-            );
-          })}
+        <div className="material-list">
+          {(materialsQ.data ?? []).map((m) => (
+            <MaterialRow
+              key={m.id}
+              material={m}
+              topicName={topicName(m.topic_id)}
+              courseName={courseName(m.course_id)}
+              onDelete={async () => {
+                try {
+                  await api.deleteMaterial(m.id);
+                  materialsQ.refresh();
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : String(e));
+                }
+              }}
+              onProcessed={materialsQ.refresh}
+            />
+          ))}
         </div>
       )}
     </section>
+  );
+}
+
+function MaterialRow({
+  material,
+  topicName,
+  courseName,
+  onDelete,
+  onProcessed,
+}: {
+  material: UploadedMaterial;
+  topicName: string;
+  courseName: string;
+  onDelete: () => void;
+  onProcessed: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const itemsQ = useQuery(
+    async () => (open ? api.getExtractedItems(material.id) : []),
+    [open, material.id],
+  );
+
+  async function process() {
+    setProcessing(true);
+    setNote(null);
+    try {
+      const res = await api.requestMaterialProcessing(material.id);
+      setNote(res.ok ? `Processed: ${res.message || "extracted content ready"}` : `Processing pending — ${res.message}`);
+      onProcessed();
+    } catch (e) {
+      setNote(`Processing failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setProcessing(false);
+    }
+  }
+
+  return (
+    <Card className="material-card">
+      <div className="material-head" onClick={() => setOpen(!open)}>
+        {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        <FileText size={18} />
+        <div className="material-main">
+          <h3>{material.file_name}</h3>
+          <span className="mut small">
+            {courseName && `${courseName} · `}
+            {topicName ? `Topic: ${topicName}` : "No topic linked"} · {new Date(material.created_at).toLocaleDateString("en-GB")}
+          </span>
+        </div>
+        <span className={`status-pill ${material.processing_status}`}>{material.processing_status}</span>
+        <Button variant="ghost" onClick={process} title="Run server-side extraction">
+          <Zap size={14} /> {processing ? "Processing…" : "Process"}
+        </Button>
+        <Button variant="ghost" onClick={onDelete} title="Delete material">
+          <Trash2 size={14} />
+        </Button>
+      </div>
+      {material.processing_error && <p className="error-text">{material.processing_error}</p>}
+      {note && <p className="mut small">{note}</p>}
+      {open &&
+        (itemsQ.loading ? (
+          <Spinner label="Loading extracted content…" />
+        ) : (itemsQ.data ?? []).length === 0 ? (
+          <p className="muted">
+            No extracted content yet. Run “Process” to extract structure server-side (text/markdown is supported now;
+            PDF extraction is pending — the pipeline is in place, the parser is not yet deployed).
+          </p>
+        ) : (
+          <div className="extract-list">
+            {(itemsQ.data ?? []).map((it) => (
+              <div key={it.id} className="extract-item">
+                <span className={`extract-type t-${it.item_type}`}>{ITEM_LABELS[it.item_type]}</span>
+                <div>
+                  {it.heading && <span className="eyebrow">{it.heading}</span>}
+                  <p>{it.content}</p>
+                  {it.source_page != null && <small className="mut">page {it.source_page} · confidence {Math.round(it.confidence * 100)}%</small>}
+                </div>
+                <span className="source-badge s1" title={sourceBanner(1)}>
+                  From your upload
+                </span>
+              </div>
+            ))}
+          </div>
+        ))}
+    </Card>
   );
 }

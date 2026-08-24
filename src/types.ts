@@ -1,99 +1,7 @@
-// Domain types mirroring supabase/migrations/0001_studylab_v0_1.sql
+// Domain types mirroring the PostgreSQL schema (supabase/migrations).
+// Only the fields the frontend reads/writes are modelled here.
 
-export type UUID = string;
-
-export interface Institution {
-  id: UUID;
-  name: string;
-  short_name: string | null;
-  country: string | null;
-  website_url: string | null;
-  is_active: boolean;
-}
-
-export interface Programme {
-  id: UUID;
-  institution_id: UUID;
-  name: string;
-  code: string | null;
-  description: string | null;
-  duration_years: number | null;
-  is_active: boolean;
-}
-
-export interface AcademicPeriod {
-  id: UUID;
-  programme_id: UUID;
-  academic_year: number;
-  year_level: number;
-  semester: 1 | 2;
-  name: string;
-  start_date: string | null;
-  end_date: string | null;
-  status: "draft" | "active" | "completed" | "archived";
-}
-
-export type CourseStatus = "confirmed" | "provisional" | "student_added" | "archived";
-
-export interface Course {
-  id: UUID;
-  programme_id: UUID;
-  code: string;
-  name: string;
-  category: string | null;
-  description: string | null;
-  credits: number | null;
-  course_type: string | null;
-  status: CourseStatus;
-  source_type: string | null;
-}
-
-export interface CourseOffering {
-  id: UUID;
-  course_id: UUID;
-  academic_period_id: UUID;
-  lecturer_name: string | null;
-  status: "planned" | "active" | "completed" | "archived";
-}
-
-export type TopicStatus = "draft" | "confirmed" | "student_added" | "archived";
-
-export interface Topic {
-  id: UUID;
-  course_id: UUID;
-  name: string;
-  description: string | null;
-  sequence_number: number | null;
-  status: TopicStatus;
-  source_type: string | null;
-  source_reference: string | null;
-  estimated_minutes: number | null;
-  created_by: UUID | null;
-}
-
-export interface Subtopic {
-  id: UUID;
-  topic_id: UUID;
-  name: string;
-  description: string | null;
-  sequence_number: number | null;
-  status: "draft" | "active" | "archived";
-  created_by: UUID | null;
-}
-
-export interface Skill {
-  id: UUID;
-  name: string;
-  description: string | null;
-  skill_type: string | null;
-  created_by: UUID | null;
-}
-
-export interface TopicSkill {
-  topic_id: UUID;
-  skill_id: UUID;
-  importance: number;
-}
+export type Id = string;
 
 export type UnitType =
   | "explanation"
@@ -105,188 +13,298 @@ export type UnitType =
   | "reflection"
   | "review";
 
-export interface LearningUnit {
-  id: UUID;
-  topic_id: UUID;
-  subtopic_id: UUID | null;
-  title: string;
-  unit_type: UnitType;
-  sequence_number: number | null;
-  description: string | null;
-  body: string | null;
-  estimated_minutes: number | null;
-  difficulty: number | null;
-  status: "draft" | "review" | "approved" | "archived";
-  created_by: UUID | null;
-}
-
-export type ResourceType =
-  | "youtube"
-  | "document"
-  | "website"
-  | "textbook"
-  | "simulation"
-  | "image"
-  | "other";
-
-export interface ContentResource {
-  id: UUID;
-  title: string;
-  description: string | null;
-  resource_type: ResourceType;
-  url: string | null;
-  provider: string | null;
-  author: string | null;
-  duration_seconds: number | null;
-  difficulty: number | null;
-  status: "draft" | "active" | "unavailable" | "archived";
-  source_type: string | null;
-  created_by: UUID | null;
-}
-
-export interface TopicResource {
-  topic_id: UUID;
-  resource_id: UUID;
-  relationship_type: string;
-  sequence_number: number | null;
-}
-
 export type QuestionType =
   | "multiple_choice"
   | "short_answer"
   | "numeric"
   | "true_false"
   | "matching"
+  | "ordering"
   | "scenario";
 
+export type StepType =
+  | "objective"
+  | "diagnostic"
+  | "explanation"
+  | "definition"
+  | "example"
+  | "worked_example"
+  | "visual"
+  | "practice"
+  | "application"
+  | "practical"
+  | "assessment"
+  | "reflection"
+  | "mastery";
+
+export type StepStatus = "locked" | "unlocked" | "in_progress" | "completed" | "skipped";
+
+export type MasteryLevel = "not_assessed" | "weak" | "developing" | "strong" | "mastered";
+
+export type SourceLevel = 1 | 2 | 3 | 4;
+
+// ---------- Curriculum ----------
+
+export interface Institution {
+  id: Id;
+  name: string;
+  short_name: string | null;
+  country: string | null;
+}
+
+export interface Programme {
+  id: Id;
+  institution_id: Id;
+  name: string;
+  code: string | null;
+  description: string | null;
+  duration_years: number | null;
+  is_active: boolean;
+}
+
+export interface AcademicPeriod {
+  id: Id;
+  programme_id: Id;
+  academic_year: number;
+  year_level: number;
+  semester: number;
+  name: string;
+  status: "draft" | "active" | "completed" | "archived";
+}
+
+export interface Course {
+  id: Id;
+  programme_id: Id;
+  code: string;
+  name: string;
+  category: string | null;
+  description: string | null;
+  credits: number | null;
+  status: "confirmed" | "provisional" | "student_added" | "archived";
+  source_type: string | null;
+  created_at: string;
+}
+
+export interface Topic {
+  id: Id;
+  course_id: Id;
+  name: string;
+  description: string | null;
+  sequence_number: number | null;
+  status: "draft" | "confirmed" | "student_added" | "archived";
+  source_type: string | null;
+  source_reference: string | null;
+  estimated_minutes: number | null;
+  created_by: Id | null;
+  created_at: string;
+}
+
+export interface Subtopic {
+  id: Id;
+  topic_id: Id;
+  name: string;
+  description: string | null;
+  sequence_number: number | null;
+  status: "draft" | "active" | "archived";
+}
+
+export interface Concept {
+  id: Id;
+  topic_id: Id;
+  name: string;
+  description: string | null;
+  definition: string | null;
+  formula: string | null;
+  difficulty: number | null;
+  sequence_number: number | null;
+  status: "draft" | "active" | "archived";
+  source_type: string | null;
+  created_by: Id | null;
+}
+
+export interface ConceptPrerequisite {
+  id: Id;
+  prerequisite_id: Id;
+  concept_id: Id;
+  confidence: number;
+}
+
+export interface Skill {
+  id: Id;
+  name: string;
+  description: string | null;
+  skill_type: string | null;
+}
+
+export interface LearningObjective {
+  id: Id;
+  course_id: Id | null;
+  topic_id: Id | null;
+  concept_id: Id | null;
+  statement: string;
+  sequence_number: number | null;
+  status: "draft" | "active" | "archived";
+  source_type: string | null;
+  created_by: Id | null;
+}
+
+// ---------- Content ----------
+
+export interface LearningUnit {
+  id: Id;
+  topic_id: Id;
+  subtopic_id: Id | null;
+  title: string;
+  unit_type: UnitType;
+  sequence_number: number | null;
+  description: string | null;
+  body: string | null;
+  formula: string | null;
+  media: Record<string, unknown>;
+  estimated_minutes: number | null;
+  difficulty: number | null;
+  status: "draft" | "review" | "approved" | "archived";
+  source_type: string | null;
+  source_reference: string | null;
+  created_by: Id | null;
+}
+
+export interface QuestionOption {
+  id: Id;
+  question_id: Id;
+  option_key: string;
+  option_text: string;
+  sequence_number: number;
+}
+
+export interface QuestionScaffolding {
+  guiding_question?: string;
+  partial_help?: string;
+  solution_walkthrough?: string;
+  why_it_works?: string;
+  similar_question_id?: Id | null;
+}
+
 export interface Question {
-  id: UUID;
-  topic_id: UUID;
-  subtopic_id: UUID | null;
+  id: Id;
+  topic_id: Id;
+  subtopic_id: Id | null;
   question_type: QuestionType;
   difficulty: number;
   question_text: string;
   explanation: string | null;
   hint_1: string | null;
   hint_2: string | null;
-  correct_answer: { key?: string; value?: string; number?: number };
-  estimated_seconds: number | null;
+  correct_answer: unknown;
+  is_diagnostic: boolean;
+  scaffolding: QuestionScaffolding;
   status: "draft" | "review" | "approved" | "retired";
-  created_by: UUID | null;
-}
-
-export interface QuestionOption {
-  id: UUID;
-  question_id: UUID;
-  option_key: string;
-  option_text: string;
-  sequence_number: number;
-  created_by: UUID | null;
-}
-
-export interface Practical {
-  id: UUID;
-  topic_id: UUID;
-  title: string;
-  objective: string | null;
-  background: string | null;
-  materials: string[];
-  safety_notes: string | null;
-  expected_outcome: string | null;
-  assessment_notes: string | null;
-  status: "draft" | "review" | "approved" | "archived";
-  created_by: UUID | null;
+  concept_id: Id | null;
+  skill_id: Id | null;
+  learning_objective_id: Id | null;
+  created_by: Id | null;
 }
 
 export interface PracticalStep {
-  id: UUID;
-  practical_id: UUID;
+  id: Id;
+  practical_id: Id;
   step_number: number;
   instruction: string;
   expected_action: string | null;
   observation_prompt: string | null;
-  created_by: UUID | null;
 }
 
-export interface StudentProfile {
-  id: UUID;
-  full_name: string;
-  institution_id: UUID | null;
-  programme_id: UUID | null;
-  current_year: number;
-  current_semester: number;
-  timezone: string;
-  study_preferences: Record<string, unknown>;
+export interface Practical {
+  id: Id;
+  topic_id: Id;
+  title: string;
+  objective: string | null;
+  background: string | null;
+  materials: unknown;
+  safety_notes: string | null;
+  procedure: unknown;
+  expected_outcome: string | null;
+  status: "draft" | "review" | "approved" | "archived";
 }
 
-export interface Enrolment {
-  id: UUID;
-  student_id: UUID;
-  programme_id: UUID;
-  academic_period_id: UUID;
-  status: "active" | "completed" | "withdrawn";
-  started_at: string;
-  ended_at: string | null;
-}
-
-export interface StudentCourseEnrolment {
-  id: UUID;
-  student_id: UUID;
-  course_offering_id: UUID;
-  status: "active" | "completed" | "withdrawn";
-}
-
-export type SessionType = "free_study" | "recommended" | "exam_prep" | "revision" | "practice";
-
-export interface StudySession {
-  id: UUID;
-  student_id: UUID;
-  started_at: string;
-  ended_at: string | null;
+export interface Resource {
+  id: Id;
+  title: string;
+  description: string | null;
+  resource_type: "youtube" | "document" | "website" | "textbook" | "simulation" | "image" | "other";
+  url: string | null;
+  provider: string | null;
+  author: string | null;
   duration_seconds: number | null;
-  session_type: SessionType;
-  topic_id: UUID | null;
-  note: string | null;
+  difficulty: number | null;
+  status: "draft" | "active" | "unavailable" | "archived";
+  source_level: SourceLevel | null;
+  provenance: Record<string, unknown>;
 }
 
-export interface LearningAttempt {
-  id: UUID;
-  student_id: UUID;
-  learning_unit_id: UUID;
-  study_session_id: UUID | null;
+export interface TopicResource {
+  topic_id: Id;
+  resource_id: Id;
+  relationship_type: string;
+  sequence_number: number | null;
+}
+
+// ---------- Sessions & attempts ----------
+
+export interface LearningSession {
+  id: Id;
+  student_id: Id;
+  topic_id: Id;
+  study_session_id: Id | null;
+  title: string | null;
+  status: "active" | "paused" | "completed" | "abandoned";
+  current_step: number;
+  difficulty_floor: number | null;
+  diagnostic_score: number | null;
   started_at: string;
   completed_at: string | null;
-  completion_percent: number;
+  settings: Record<string, unknown>;
+}
+
+export interface SessionStep {
+  id: Id;
+  learning_session_id: Id;
+  learning_unit_id: Id | null;
+  question_id: Id | null;
+  practical_id: Id | null;
+  step_number: number;
+  step_type: StepType;
+  title: string;
+  status: StepStatus;
+  completed_at: string | null;
+  score: number | null;
+  duration_seconds: number | null;
+  metadata: Record<string, unknown>;
 }
 
 export interface QuestionAttempt {
-  id: UUID;
-  student_id: UUID;
-  question_id: UUID;
-  study_session_id: UUID | null;
+  id: Id;
+  student_id: Id;
+  question_id: Id;
+  learning_session_id: Id | null;
+  study_session_id: Id | null;
   answer: unknown;
-  is_correct: boolean;
-  score: number;
-  time_seconds: number;
-  confidence: number | null;
+  is_correct: boolean | null;
+  score: number | null;
+  time_seconds: number | null;
   hints_used: number;
+  attempt_number: number;
   attempted_at: string;
 }
 
-export type MasteryLevel =
-  | "not_started"
-  | "learning"
-  | "developing"
-  | "functional"
-  | "strong"
-  | "mastered";
+// ---------- Mastery & scheduling ----------
 
 export interface TopicMastery {
-  id: UUID;
-  student_id: UUID;
-  topic_id: UUID;
+  id: Id;
+  student_id: Id;
+  topic_id: Id;
   mastery_score: number;
-  mastery_level: MasteryLevel;
+  mastery_level: string;
   confidence_score: number;
   attempt_count: number;
   last_practiced_at: string | null;
@@ -294,143 +312,187 @@ export interface TopicMastery {
   next_review_at: string | null;
 }
 
-export interface SkillMastery {
-  id: UUID;
-  student_id: UUID;
-  skill_id: UUID;
+export interface ConceptMastery {
+  id: Id;
+  student_id: Id;
+  concept_id: Id;
   mastery_score: number;
+  mastery_level: MasteryLevel;
   confidence_score: number;
   attempt_count: number;
   last_assessed_at: string | null;
 }
 
-export type ReviewStatus = "scheduled" | "completed" | "skipped" | "cancelled";
-
-export interface ReviewSchedule {
-  id: UUID;
-  student_id: UUID;
-  topic_id: UUID;
+export interface ReviewItem {
+  id: Id;
+  student_id: Id;
+  topic_id: Id;
   scheduled_for: string;
   interval_days: number;
   ease_factor: number;
-  status: ReviewStatus;
-  last_result: number | null;
+  status: "scheduled" | "completed" | "skipped" | "cancelled";
 }
-
-export type RecommendationType =
-  | "start_topic"
-  | "continue_unit"
-  | "practice"
-  | "review"
-  | "upload_material"
-  | "practical";
-export type RecommendationStatus = "active" | "accepted" | "dismissed" | "expired";
 
 export interface Recommendation {
-  id: UUID;
-  student_id: UUID;
-  course_id: UUID | null;
-  topic_id: UUID | null;
-  recommendation_type: RecommendationType;
+  id: Id;
+  student_id: Id;
+  course_id: Id | null;
+  topic_id: Id | null;
+  recommendation_type: string;
   priority: number;
   reason: string;
-  minutes: number;
-  expires_at: string | null;
-  status: RecommendationStatus;
+  status: "active" | "accepted" | "dismissed" | "expired";
+  created_at: string;
 }
 
-export type PlanStatus = "draft" | "active" | "completed" | "cancelled";
-
-export interface StudyPlan {
-  id: UUID;
-  student_id: UUID;
-  name: string;
-  start_date: string;
-  end_date: string;
-  target_minutes: number;
-  status: PlanStatus;
-}
-
-export interface StudyPlanItem {
-  id: UUID;
-  study_plan_id: UUID;
-  topic_id: UUID | null;
-  title: string;
-  scheduled_date: string;
-  planned_minutes: number;
-  sequence_number: number;
-  status: "planned" | "started" | "completed" | "skipped";
-}
-
-export type ProcessingStatus = "pending" | "processing" | "ready" | "failed";
+// ---------- Materials & AI ----------
 
 export interface UploadedMaterial {
-  id: UUID;
-  student_id: UUID;
-  course_id: UUID | null;
-  topic_id: UUID | null;
+  id: Id;
+  student_id: Id;
+  course_id: Id | null;
+  topic_id: Id | null;
   file_name: string;
   storage_path: string;
   mime_type: string | null;
-  file_size: number;
-  processing_status: ProcessingStatus;
+  file_size: number | null;
+  processing_status: "pending" | "processing" | "ready" | "failed";
+  processing_error: string | null;
   extracted_text: string | null;
+  page_count: number | null;
   ai_classification: Record<string, unknown> | null;
   created_at: string;
 }
 
-export type AIMode = "tutor" | "explain" | "practice" | "revision" | "exam_prep" | "material_analysis";
-
-export interface AIConversation {
-  id: UUID;
-  student_id: UUID;
-  course_id: UUID | null;
-  topic_id: UUID | null;
-  mode: AIMode;
-  title: string;
-  created_at: string;
-  updated_at: string;
+export interface ExtractedItem {
+  id: Id;
+  material_id: Id;
+  item_type:
+    | "heading"
+    | "definition"
+    | "formula"
+    | "example"
+    | "question"
+    | "objective"
+    | "activity"
+    | "concept"
+    | "relationship";
+  content: string;
+  heading: string | null;
+  source_page: number | null;
+  confidence: number;
+  concept_id: Id | null;
+  question_id: Id | null;
 }
 
-export interface AIMessage {
-  id: UUID;
-  conversation_id: UUID;
+export interface AiConversation {
+  id: Id;
+  student_id: Id;
+  course_id: Id | null;
+  topic_id: Id | null;
+  mode: "tutor" | "explain" | "practice" | "revision" | "exam_prep" | "material_analysis";
+  title: string | null;
+  created_at: string;
+}
+
+export interface AiMessage {
+  id: Id;
+  conversation_id: Id;
   role: "system" | "user" | "assistant" | "tool";
   content: string;
   metadata: Record<string, unknown>;
   created_at: string;
 }
 
-export interface Database {
-  institutions: Institution[];
-  programmes: Programme[];
-  academic_periods: AcademicPeriod[];
-  courses: Course[];
-  course_offerings: CourseOffering[];
-  topics: Topic[];
-  subtopics: Subtopic[];
-  skills: Skill[];
-  topic_skills: TopicSkill[];
-  learning_units: LearningUnit[];
-  content_resources: ContentResource[];
-  topic_resources: TopicResource[];
-  questions: Question[];
-  question_options: QuestionOption[];
-  practicals: Practical[];
-  practical_steps: PracticalStep[];
-  student_profiles: StudentProfile[];
-  enrolments: Enrolment[];
-  student_course_enrolments: StudentCourseEnrolment[];
-  study_sessions: StudySession[];
-  learning_attempts: LearningAttempt[];
-  question_attempts: QuestionAttempt[];
-  topic_mastery: TopicMastery[];
-  skill_mastery: SkillMastery[];
-  review_schedule: ReviewSchedule[];
-  recommendations: Recommendation[];
-  study_plans: StudyPlan[];
-  study_plan_items: StudyPlanItem[];
-  uploaded_materials: UploadedMaterial[];
-  ai_conversations: AIConversation[];
-  ai_messages: AIMessage[];
+export interface ExplainBackAttempt {
+  id: Id;
+  student_id: Id;
+  topic_id: Id | null;
+  concept_id: Id | null;
+  prompt: string;
+  student_response: string;
+  ai_feedback: Record<string, unknown> | null;
+  score: number | null;
+  created_at: string;
+}
+
+// ---------- Assessments (Phase 5) ----------
+
+export interface Assessment {
+  id: Id;
+  course_id: Id | null;
+  topic_id: Id | null;
+  title: string;
+  description: string | null;
+  question_ids: Id[];
+  pass_percent: number;
+  time_limit_seconds: number | null;
+  status: "draft" | "review" | "approved" | "archived";
+  source_type: string | null;
+  created_by: Id | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuestionResult {
+  question_id: Id;
+  score: number;
+  correct: boolean | null;
+  hints_used: number;
+  time_seconds: number | null;
+  answer: unknown;
+}
+
+export interface AssessmentAttempt {
+  id: Id;
+  student_id: Id;
+  assessment_id: Id;
+  learning_session_id: Id | null;
+  started_at: string;
+  submitted_at: string | null;
+  score: number | null;
+  passed: boolean | null;
+  question_results: QuestionResult[];
+  created_at: string;
+}
+
+// ---------- Practical activities (Phase 9) ----------
+
+export interface ActivityAttempt {
+  id: Id;
+  student_id: Id;
+  activity_type: string;
+  subject: string | null;
+  scenario: Record<string, unknown>;
+  answer: Record<string, unknown>;
+  is_correct: boolean | null;
+  score: number | null;
+  time_seconds: number | null;
+  created_at: string;
+}
+
+// ---------- Student ----------
+
+export interface StudentProfile {
+  id: Id;
+  full_name: string | null;
+  institution_id: Id | null;
+  programme_id: Id | null;
+  current_year: number | null;
+  current_semester: number | null;
+  timezone: string | null;
+  study_preferences: Record<string, unknown>;
+}
+
+export interface Enrolment {
+  id: Id;
+  student_id: Id;
+  programme_id: Id;
+  academic_period_id: Id;
+  status: "active" | "completed" | "withdrawn";
+}
+
+export interface User {
+  id: Id;
+  email: string;
 }

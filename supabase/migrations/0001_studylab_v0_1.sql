@@ -26,6 +26,19 @@ create table if not exists public.institutions (
   updated_at timestamptz not null default now()
 );
 
+-- Backfill: databases where 0001 was applied before the unique(name) fix
+-- (the original script failed on the institutions seed insert).
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.institutions'::regclass
+      and contype = 'u' and conname = 'institutions_name_key'
+  ) then
+    execute 'alter table public.institutions add constraint institutions_name_key unique (name)';
+  end if;
+end $$;
+
 create table if not exists public.programmes (
   id uuid primary key default gen_random_uuid(),
   institution_id uuid not null references public.institutions(id) on delete restrict,

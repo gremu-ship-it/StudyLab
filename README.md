@@ -1,97 +1,148 @@
 # StudyLab
 
-Adaptive learning companion, seeded for the LUANAR BSc in Natural & Applied Science.
+An AI-powered, source-grounded learning environment. Seeded for the LUANAR
+BSc in Natural & Applied Science, but the curriculum is **flexible by design** —
+courses, topics, objectives, units, questions and resources can be added by
+students and lecturers, imported, or generated from uploaded material.
 
-**Curriculum → Topic → Learning → Practice → Assessment → Mastery → Recommendation.**
+```
+Curriculum → Topic → Learning Session → Practice → Assessment → Mastery → Recommendation
+```
 
-![Stack](https://img.shields.io/badge/React-19-6c7cff) ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6) ![Vite](https://img.shields.io/badge/Vite-6-646cff)
+The 2-week timetable from the original MVP is treated only as a **curriculum
+seed**, never as a hard-coded product limit.
+
+## Stack
+
+- **Frontend** — React 19 + TypeScript + Vite (hash router, no demo data)
+- **Backend** — Supabase: PostgreSQL (RLS on every table), Auth, Storage, Edge Functions
+- **AI** — Anthropic or OpenAI, called **only from Edge Functions**; keys never reach the browser
+- **Local tooling** — embedded PostgreSQL migration harness + Vitest unit tests
+
+## Product principles (enforced, not suggested)
+
+1. **Learning Sessions** are first-class: objectives → diagnostic →
+   explanation/definition/example/worked example → guided & independent
+   practice → application → practical → assessment → Feynman explain-back →
+   mastery evaluation → scheduled review. Steps unlock progressively; one
+   active session per student per topic.
+2. **Active-learning scaffolding, never answer-first**: attempt → identify
+   the reasoning gap → hint → guiding question → partial help → reveal →
+   "why it works" → try again.
+3. **4-level source hierarchy** on every item: L1 student/lecturer/university
+   material · L2 authoritative academic · L3 curated external · L4 AI-generated.
+   AI text is never presented as authoritative; no sources ⇒ an explicit
+   "insufficient sources" state.
+4. **Uploaded documents are never modified.** Originals are stored untouched in
+   a private bucket; extraction produces derived `extracted_content` rows with
+   page + confidence provenance, and is labelled L1 "from your upload".
+5. **Mastery discrimination**: the engine separates easy items from
+   application items. A student who passes easy items but fails application
+   items is capped at *developing*, never *mastered*. States:
+   not_assessed / weak / developing / strong / mastered.
+6. **Honest pending states**: features that need an external service
+   (AI provider, PDF parsing) say so in the UI instead of faking output.
 
 ## Run locally
 
 ```bash
 npm install
-cp .env.example .env      # add VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY when connecting a backend
-npm run dev
+cp .env.example .env        # VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY
+npm run dev                 # without .env the app shows an honest setup screen
 ```
 
-The app runs in **two modes**:
+## Scripts
 
-- **Demo mode (default):** no backend needed. A rich multi-institution seed (LUANAR, MUST, UNIMA) with courses, topics, learning units, questions, practicals, video lessons, recommendations and a study plan is loaded into the browser. All progress is persisted in `localStorage` through a typed data-access layer (`src/store.ts`).
-- **Live mode:** when `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set, users sign in (email/password or magic link) and all student-owned data — enrolments, mastery, review schedule, recommendations, study plans, uploads, AI conversations — syncs to Supabase. The same store methods write through to the backend; the UI is unchanged.
+| Script            | What it does                                                        |
+| ----------------- | ------------------------------------------------------------------- |
+| `npm run dev`     | Vite dev server                                                       |
+| `npm run build`   | Type-check + production build                                         |
+| `npm run typecheck` | `tsc -b` across the project                                           |
+| `npm test`        | Vitest: grading, mastery, session planning, recommendations, document extraction, practical activities |
+| `npm run db:verify` | Boots an embedded PostgreSQL, applies **all** `supabase/migrations/*.sql` in order against Supabase stubs, asserts **RLS is enabled on every public table**, prints table/policy/seed counts. Exits 1 on any failure. `node scripts/local-db.mjs --query "<sql>"` queries the persistent local DB. |
 
-A green **"Live · synced"** badge in the top bar confirms cloud sync; a grey **"Demo mode"** badge means local data.
+## Database
+
+Seven migrations (apply in order; all are idempotent):
+
+| File | Adds |
+| ---- | ---- |
+| `0001_studylab_v0_1.sql` | Curriculum model (institution → programme → courses → topics → subtopics), student model, content (units, questions, practicals, resources), progress (attempts, mastery, review schedule, recommendations), uploads, AI conversation log, RLS, private `student-materials` bucket, LUANAR seed |
+| `0002_learning_sessions.sql` | Knowledge model (concepts, prerequisites, objectives), **Learning Sessions** + ordered steps with progressive unlock, one-active-per-topic invariant, 6 seeded skills |
+| `0003_sources_provenance.sql` | `source_level` (1–4) + `provenance` on resources, ingestion bookkeeping, `extracted_content` (service-role writes, owner-read RLS) |
+| `0004_assessments_mastery.sql` | Session-linked attempts with `attempt_number`, `assessments` + `assessment_attempts`, `concept_mastery` (unique per student+concept), widened mastery-level vocabulary |
+| `0005_ai_reflection.sql` | `explain_back_attempts` (Feynman mode) — stored immediately, AI evaluation fills `score`/`ai_feedback` later or stays null ("evaluation pending") |
+| `0006_practical_activities.sql` | `activity_attempts` — real records of guided quick-activity completions |
+| `0007_own_draft_visibility.sql` | Authors can read their own draft/review questions & assessments (published rows stay the public surface) |
+
+**Security model**
+
+- RLS is enabled on **every** public table; `db:verify` fails the build gate
+  if a new table ships without it.
+- Student rows are scoped with `student_id = auth.uid()`; student-authored
+  curriculum rows are writable only by their author while `draft`/`review`.
+- Uploaded files live in a **private** `student-materials` bucket; the
+  `process-material` Edge Function reads them server-side (service role) and
+  never writes back to the original.
+- AI keys exist only as Edge Function secrets (`ANTHROPIC_API_KEY` /
+  `OPENAI_API_KEY`). Edge Functions verify the student's Supabase JWT before
+  doing any work and re-check resource ownership.
+
+## Edge Functions
 
 ```bash
-npm run build     # type-check + production build to dist/
+supabase db push
+supabase functions deploy ai-tutor
+supabase functions deploy process-material
+supabase secrets set ANTHROPIC_API_KEY=sk-ant-...   # or OPENAI_API_KEY
 ```
 
-## Features
+- **`ai-tutor`** — receives the full learning context (programme, course,
+  topic, mastery, weak concepts, recent attempts, the student's *sources*
+  with levels) and returns `{content, source_level, needs_more_info,
+  missing_info?}`. The source policy is enforced server-side: no sources ⇒
+  level 4 + `needs_more_info`. `feynman_evaluate` returns a `<n> / 100` score
+  plus strengths/gaps/next step. No provider configured ⇒ `503
+  ai_not_configured` and the UI shows a pending banner.
+- **`process-material`** — reads a student's upload (read-only), extracts
+  headings / definitions / formulas / questions / objectives / activities
+  with a **deterministic, unit-tested parser** (no AI), writes
+  `extracted_content` rows, marks the material `ready` — or honestly reports
+  PDF/Office as *pending in this build*.
 
-| Area | What you can do |
-|---|---|
-| **Dashboard** | Mastery ring, weekly study time, reviews due, daily plan, prioritised recommendations, strongest/weakest topics |
-| **Courses** | All 14 LUANAR courses grouped by category with live mastery and lecturer |
-| **Course workspace** | Topic browser; learning units (explanations, worked examples, video, reflection, review) with completion; in-topic quiz; practicals; **Video Lessons** tab with inline YouTube embeds + "Add link"; structure editor (add subtopics and units) |
-| **Video Lessons** | Every topic can embed YouTube lessons (watch URLs, shorts, playlists all supported) with thumbnails and an inline player; students/lecturers can paste any YouTube, article or document link. Lessons come from 3Blue1Brown, Khan Academy, CrashCourse, Amoeba Sisters, MIT OCW, CS50 and others |
-| **Multi-institution** | The app is institution-agnostic: pick your university and programme in setup, or switch any time from the sidebar/profile. Courses, topics, mastery, recommendations and plan are all scoped per programme. Three institutions are seeded (LUANAR, MUST, UNIMA) and you can add new institutions and programmes in-app |
-| **Study Plan** | Adaptive daily timeline, add blocks, start a tracked session, recent-session history |
-| **Curriculum Inbox** | Add student topics; confirm them into the active curriculum |
-| **Practice** | Per-topic question banks or a mixed 8-question set; MCQ, true/false, numeric and short-answer; results screen feeds mastery and scheduling |
-| **Practicals** | Guided lab activities with objectives, safety, materials, step-by-step procedure and checklists |
-| **Review** | SM-2-inspired spaced-repetition schedule: due now, upcoming and full history |
-| **Mastery** | Topic and skill mastery analytics with six mastery levels |
-| **Materials** | Drag-and-drop uploads with simulated text extraction and AI classification; "Ask AI" on any upload |
-| **AI Tutor** | Multi-mode chat (Tutor, Explain, Practice, Revision, Exam prep, Material analysis), multiple conversations, context-aware responses grounded in your topics and units |
-| **Profile** | Edit profile, daily target, view activity counts, reset demo data |
-| **Data Explorer** | Browse every one of the 28 schema tables (the full domain model), grouped by domain, with filtering |
+Both functions live in `supabase/functions/` and import local TypeScript
+files; the extraction parser is shared with `test/extract.test.ts` so tests
+and runtime cannot drift.
 
-## Data model
+## Frontend map
 
-Every entity you asked for is represented — both in the SQL migration (`supabase/migrations/0001_studylab_v0_1.sql`) and as TypeScript domain types (`src/types.ts`):
+| Route | Page |
+| ----- | ---- |
+| `#/` | Dashboard — today's plan, continue, recommendations (each with a *why*), weak areas, review due, course progress |
+| `#/courses`, `#/courses/:id` | Courses + workspace (Overview / Topics / Resources / Practice / Assessments / Practicals) |
+| `#/topics/:id` | Topic detail — start/resume a Learning Session; author objectives, concepts, units, questions, prerequisites |
+| `#/session/:id` | Session runner — numbered step list with lock state, diagnostics with fast-track, scaffolded questions, practicals, reflection, mastery |
+| `#/materials` | Uploads + extraction (originals preserved, items provenanced) |
+| `#/map` | Knowledge map — topics & concepts coloured by mastery, explains the recommendations |
+| `#/tutor` | Contextual AI tutor — 11 tasks (explain, analogy, quiz, why-wrong, …) + Feynman mode; quiz/hint work deterministically from the question bank even with no AI configured |
 
-- **Curriculum:** `institutions`, `programmes`, `academic_periods`, `courses`, `course_offerings`, `topics`, `subtopics`, `skills`, `topic_skills`
-- **Content:** `learning_units`, `content_resources`, `topic_resources`, `questions`, `question_options`, `practicals`, `practical_steps`
-- **Student:** `student_profiles`, `enrolments`, `student_course_enrolments`
-- **Progress:** `study_sessions`, `learning_attempts`, `question_attempts`, `topic_mastery`, `skill_mastery`
-- **Adaptive:** `review_schedule`, `recommendations`, `study_plans`, `study_plan_items`
-- **Materials & AI:** `uploaded_materials`, `ai_conversations`, `ai_messages`
+## Testing & verification gate
 
-The full Postgres schema, row-level security, student policies and the private `student-materials` storage bucket are defined in the migration.
+Every phase ships with: `npm run typecheck` · `npm test` · `npm run build` ·
+`npm run db:verify` (migrations + RLS) · manual smoke of the changed surface.
+Pure engines live in `src/lib/` (`answer`, `mastery`, `session`,
+`recommendations`, `sources`, `progress`, `practical-activities`) and are
+covered by Vitest.
 
-## Project structure
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full 8-part
+assessment: current architecture, reusable components, gaps, DB/API/UI/AI
+changes, and the implementation-phase plan.
 
-```
-src/
-  types.ts          # domain types mirroring the SQL schema
-  seed.ts           # LUANAR seed data (courses, topics, units, questions, practicals...)
-  store.ts          # reactive store + persistence, mastery/SM-2 logic, AI responder
-  components/ui.tsx # modal, toasts, formatters
-  pages/            # Dashboard, Courses, CoursePage, StudyPlan, Inbox, Practice,
-                    # Practicals, Review, Mastery, Materials, AITutor, Profile, DataExplorer
-  App.tsx           # shell + client-side routing
-  styles.css        # design system
-```
+## Pending (honest list)
 
-## Going live with Supabase
-
-The app already includes a Supabase client, auth (email/password + magic link), and a live data sync layer. To enable **Live mode**:
-
-1. Create a Supabase project.
-2. In the SQL editor, run both migrations in order:
-   - `supabase/migrations/0001_studylab_v0_1.sql` — schema, RLS, core seed (institutions, programmes, courses).
-   - `supabase/migrations/0002_live_readiness.sql` — columns the expanded app needs (`study_sessions.topic_id/note`, `learning_units.body`, `content_resources.source_type`, `created_by` ownership), and RLS policies letting students manage **their own** topics, units, questions, practicals and resources.
-3. Copy `.env.example` to `.env` and fill in:
-   ```
-   VITE_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
-   VITE_SUPABASE_ANON_KEY=YOUR-ANON-PUBLIC-KEY
-   ```
-4. Restart the dev server. You'll see a sign-in screen; create an account (or use a magic link), and the badge in the top bar will switch to **Live · synced**.
-
-### How the sync works
-
-- `src/lib/supabase.ts` creates the client and lists every table.
-- `src/lib/live.ts` hydrates all rows the signed-in student can see into the store on sign-in, and upserts/deletes rows as the student makes changes.
-- `src/store.ts` is the single state source in both modes; in live mode it generates real UUIDs for new rows and tags student-authored curriculum with `created_by = auth.uid()`, which the RLS policies require.
-- Curriculum tables are shared/read-only for institution-authored content; students can add and manage their own topics, subtopics, units, questions, practicals, skills and resources. Student-owned tables (mastery, review, sessions, uploads, AI chats) are fully private per the policies in 0001.
-
-To populate topics/units/questions for everyone, insert them server-side with `created_by = null` (institution content); students see them automatically. To let students author content in the app, the 0002 policies already allow it.
+- PDF/PowerPoint/Word extraction (parser contract is in place; binary
+  formats report *pending* in the UI).
+- AI evaluation of Feynman explain-backs (attempts are saved and marked
+  *evaluation pending* until a provider key is configured).
+- Lecturer/admin roles and curriculum approval workflow (students currently
+  author as `draft`/`student_added`; status gating is in the schema).

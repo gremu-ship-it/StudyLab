@@ -1,76 +1,97 @@
-import { useMemo } from "react";
-import { BookOpen, ChevronRight } from "lucide-react";
-import { useStore, store } from "../store";
-import { useStudent } from "../student";
-import type { NavFn } from "../App";
-import { categoryAccent } from "../components/ui";
+import { useMemo, useState } from "react";
+import { BookOpen, ChevronRight, Search } from "lucide-react";
+import * as api from "../lib/api";
+import { useAuth, useQuery } from "../lib/auth";
+import { Empty, ErrorNote, Spinner } from "../components/ui";
+import { Link } from "../router";
 
-export function CoursesPage({ nav, search }: { nav: NavFn; search: string }) {
-  const db = useStore((d) => d);
-  const sid = store.studentId;
-  const ctx = useStudent();
+export function CoursesPage() {
+  const { state } = useAuth();
+  const profile = state.status === "ready" ? state.profile : null;
+  const [search, setSearch] = useState("");
 
-  const coursesWithStats = useMemo(() => {
-    return ctx.courses.map((c) => {
-      const topics = db.topics.filter((t) => t.course_id === c.id);
-      const m = db.topic_mastery.filter((x) => x.student_id === sid && topics.some((t) => t.id === x.topic_id));
-      const mastery = m.length ? Math.round(m.reduce((s, x) => s + x.mastery_score, 0) / m.length) : 0;
-      const offering = db.course_offerings.find((o) => o.course_id === c.id);
-      return { course: c, topics: topics.length, mastery, lecturer: offering?.lecturer_name };
-    });
-  }, [ctx.courses, db, sid]);
+  const coursesQ = useQuery(() => (profile?.programme_id ? api.getCourses(profile.programme_id) : Promise.resolve([])), [profile?.programme_id]);
+  const topicsQ = useQuery(async () => {
+    const courses = coursesQ.data ?? [];
+    return courses.length ? api.getTopicsForCourses(courses.map((c) => c.id)) : [];
+  }, [(coursesQ.data ?? []).map((c) => c.id).join(",")]);
+  const masteryQ = useQuery(api.getTopicMastery, []);
 
-  const filtered = coursesWithStats.filter((c) =>
-    `${c.course.name} ${c.course.code} ${c.course.category ?? ""}`.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    const list = coursesQ.data ?? [];
+    if (!search) return list;
+    const s = search.toLowerCase();
+    return list.filter((c) => `${c.code} ${c.name} ${c.category ?? ""}`.toLowerCase().includes(s));
+  }, [coursesQ.data, search]);
 
-  const categories = [...new Set(filtered.map((c) => c.course.category ?? "Other"))];
-  const totalTopics = filtered.reduce((s, c) => s + c.topics, 0);
+  if (coursesQ.error) return <div className="page"><ErrorNote message={coursesQ.error} onRetry={coursesQ.refresh} /></div>;
+  if (coursesQ.loading)
+    return (
+      <div className="page">
+        <Spinner label="Loading courses…" />
+      </div>
+    );
 
   return (
     <section className="page">
       <div className="page-heading">
         <div>
-          <span className="eyebrow">{ctx.institution?.short_name} · {ctx.programme?.name} · {ctx.period?.name}</span>
+          <span className="eyebrow">BSC NATURAL & APPLIED SCIENCE</span>
           <h1>My Courses</h1>
-          <p>{filtered.length} courses · {totalTopics} topics in your curriculum</p>
+          <p>The timetable is a starting point — topics enter as your lecturers introduce them.</p>
         </div>
-        <button className="primary" onClick={() => nav({ name: "inbox" })}>Add topic</button>
       </div>
 
-      {categories.map((cat) => {
-        const items = filtered.filter((c) => (c.course.category ?? "Other") === cat);
-        if (!items.length) return null;
-        return (
-          <div key={cat}>
-            <div className="section-head"><h2 style={{ fontSize: 15 }}>{cat}</h2><span className="muted">{items.length} courses</span></div>
-            <div className="course-grid">
-              {items.map(({ course, topics, mastery, lecturer }) => (
-                <button key={course.id} className="course-card" onClick={() => nav({ name: "course", courseId: course.id })}>
-                  <div className={`course-icon ${categoryAccent[course.category ?? ""] ?? "math"}`}><BookOpen size={19} /></div>
-                  <div className="course-main">
-                    <span>{course.code}</span>
-                    <h3>{course.name}</h3>
-                    <small>{lecturer ?? course.category}{course.credits ? ` · ${course.credits} credits` : ""}</small>
-                  </div>
-                  <ChevronRight size={18} className="arrow" />
-                  <div className="progress-row"><span>{topics} topic{topics === 1 ? "" : "s"}</span><strong>{mastery}%</strong></div>
-                  <div className="progress"><i style={{ width: `${mastery}%` }} /></div>
-                  <div className="mastery"><span>Mastery</span><b>{mastery}%</b></div>
-                </button>
-              ))}
-            </div>
-          </div>
-        );
-      })}
+      <div className="search wide">
+        <Search size={16} />
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search courses…" />
+      </div>
 
-      {filtered.length === 0 && (
-        <div className="empty-state">
-          <BookOpen size={34} />
-          <h2>No courses in this programme yet</h2>
-          <p>Your programme doesn't have courses configured. Switch to another institution/programme, or topics can still be added manually.</p>
+      {(coursesQ.data ?? []).length === 0 ? (
+        <Empty
+          icon={<BookOpen size={36} />}
+          title="No courses linked yet"
+          body="Link your programme during onboarding, or ask your administrator to confirm the current courses."
+        />
+      ) : (
+        <div className="course-grid">
+          {filtered.map((c) => {
+            const courseTopics = (topicsQ.data ?? []).filter((t) => t.course_id === c.id);
+            const mastered = courseTopics.filter((t) => {
+              const m = masteryQ.data?.find((r) => r.topic_id === t.id);
+              return m && (m.mastery_level === "strong" || m.mastery_level === "mastered");
+            }).length;
+            return (
+              <Link key={c.id} to={`/courses/${c.id}`} className="course-card">
+                <div className="course-icon math">
+                  <BookOpen size={19} />
+                </div>
+                <div className="course-main">
+                  <span>
+                    {c.code} · {c.status === "student_added" ? "student added" : c.status}
+                  </span>
+                  <h3>{c.name}</h3>
+                  <small>{c.category ?? ""}</small>
+                </div>
+                <ChevronRight size={18} className="arrow" />
+                <div className="progress-row">
+                  <span>
+                    {courseTopics.length} topic{courseTopics.length === 1 ? "" : "s"} · {mastered} mastered
+                  </span>
+                </div>
+                {courseTopics.length > 0 && (
+                  <div className="mastery">
+                    <span>Course mastery</span>
+                    <b>{Math.round((mastered / courseTopics.length) * 100)}%</b>
+                  </div>
+                )}
+              </Link>
+            );
+          })}
         </div>
       )}
     </section>
   );
 }
+
+

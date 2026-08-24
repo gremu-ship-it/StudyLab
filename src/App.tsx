@@ -1,265 +1,204 @@
-import { useEffect, useMemo, useState } from "react";
+// App shell: sidebar + topbar + hash-routed pages, auth-gated.
+
+import { useMemo } from "react";
 import {
-  BookOpen, Brain, Building2, CalendarDays, ChevronRight, ClipboardList, FlaskConical,
-  GraduationCap, LayoutDashboard, Menu, MessageSquare, Microscope, Repeat, Search, Sparkles,
-  Target, Upload, UserCircle, X, BarChart3, Library,
+  BookOpen,
+  Brain,
+  ClipboardList,
+  GraduationCap,
+  LayoutDashboard,
+  LogOut,
+  Map as MapIcon,
+  Menu,
+  Network,
+  Search,
 } from "lucide-react";
-import { useStore, store } from "./store";
-import { useStudent } from "./student";
-import { ToastHost, initials, toast } from "./components/ui";
-import { SetupModal } from "./components/SetupModal";
-import { AuthScreen } from "./components/Auth";
-import { ModeBadge } from "./components/ModeBadge";
-import { isSupabaseConfigured, supabase } from "./lib/supabase";
-import { hydrateFromSupabase, onAuthChange, signOut, upsertRow, deleteRow, uploadFile } from "./lib/live";
+import { AuthProvider, useAuth } from "./lib/auth";
+import { Link, matchPath, useRoute } from "./router";
+import { SetupPage } from "./pages/Setup";
+import { AuthPage, OnboardingPage } from "./pages/Auth";
 import { Dashboard } from "./pages/Dashboard";
 import { CoursesPage } from "./pages/Courses";
-import { CoursePage } from "./pages/CoursePage";
-import { StudyPlanPage } from "./pages/StudyPlan";
-import { InboxPage } from "./pages/Inbox";
-import { PracticePage } from "./pages/Practice";
-import { PracticalListPage } from "./pages/Practicals";
-import { ReviewPage } from "./pages/Review";
-import { MasteryPage } from "./pages/Mastery";
+import { CourseWorkspace } from "./pages/CourseWorkspace";
+import { TopicDetail } from "./pages/TopicDetail";
+import { SessionRunner } from "./pages/SessionRunner";
 import { MaterialsPage } from "./pages/Materials";
-import { AITutorPage } from "./pages/AITutor";
-import { ProfilePage } from "./pages/Profile";
-import { DataExplorerPage } from "./pages/DataExplorer";
-
-export type Route =
-  | { name: "dashboard" }
-  | { name: "courses" }
-  | { name: "course"; courseId: string }
-  | { name: "study" }
-  | { name: "inbox" }
-  | { name: "practice"; topicId?: string }
-  | { name: "practicals" }
-  | { name: "review" }
-  | { name: "mastery" }
-  | { name: "materials" }
-  | { name: "ai"; conversationId?: string; topicId?: string; courseId?: string }
-  | { name: "profile" }
-  | { name: "explorer" };
-
-export type NavFn = (r: Route) => void;
+import { KnowledgeMapPage } from "./pages/KnowledgeMap";
+import { TutorPage } from "./pages/Tutor";
+import * as api from "./lib/api";
+import { Spinner } from "./components/ui";
+import { useQuery } from "./lib/auth";
 
 export default function App() {
-  const [route, setRoute] = useState<Route>({ name: "dashboard" });
-  const [search, setSearch] = useState("");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const student = useStore((db) => db.student_profiles[0]);
-  const [setupOpen, setSetupOpen] = useState<"setup" | "switch" | null>(null);
-  const ctx = useStudent();
-
-  // ----- Auth / live-data bootstrap -----
-  const [authUserId, setAuthUserId] = useState<string | null>(null);
-  const [bootstrapped, setBootstrapped] = useState(!isSupabaseConfigured);
-  const [hydrating, setHydrating] = useState(false);
-  const [wantDemo, setWantDemo] = useState(false);
-
-  useEffect(() => {
-    if (!isSupabaseConfigured) { setBootstrapped(true); return; }
-    let cancelled = false;
-    const unsub = onAuthChange(async (uid) => {
-      if (cancelled) return;
-      setAuthUserId(uid);
-      if (!uid) {
-        store.reset();
-        setBootstrapped(true);
-        return;
-      }
-      store.setStudentId(uid);
-      store.setRemote({
-        upsert: (table, row) => upsertRow(table as never, row),
-        remove: (table, id) => deleteRow(table as never, id),
-        uploadFile: (userId, file) => uploadFile(userId, file),
-        onError: (msg) => toast(msg, "info"),
-      });
-      setHydrating(true);
-      try {
-        const db = await hydrateFromSupabase();
-        const hasStudent = db.student_profiles.some((p) => p.id === uid);
-        store.replace(db, "live");
-        store.setStudentId(uid);
-        if (!hasStudent) {
-          // First sign-in: look up the real LUANAR NAS programme from the DB
-          // (never use the local seed IDs in live mode — they are not UUIDs).
-          const inst = db.institutions.find((i) => i.short_name === "LUANAR") ?? db.institutions[0];
-          const prog = db.programmes.find((p) => p.name === "BSc in Natural & Applied Science")
-            ?? db.programmes.find((p) => p.institution_id === inst?.id)
-            ?? db.programmes[0];
-          if (inst && prog) {
-            const { data: sess } = await supabase!.auth.getSession();
-            store.setupStudent(
-              (sess.session?.user.user_metadata?.full_name as string) || "Student",
-              inst.id, prog.id, prog ? (db.academic_periods.find((a) => a.programme_id === prog.id && a.status === "active")?.year_level ?? 2) : 2,
-              1
-            );
-          }
-        }
-      } catch (e) {
-        console.error(e);
-        toast(`Could not load cloud data: ${(e as Error).message}`, "info");
-      } finally {
-        setHydrating(false);
-        setBootstrapped(true);
-      }
-    });
-    return () => { cancelled = true; unsub(); };
-  }, []);
-
-  const signedIn = Boolean(authUserId);
-  const showAuthGate = isSupabaseConfigured && bootstrapped && !signedIn && !wantDemo;
-
-  const nav: NavFn = (r) => {
-    setRoute(r);
-    setSidebarOpen(false);
-    window.scrollTo({ top: 0 });
-  };
-
-  const counts = useCounts();
-
-  const navItems: [string, string, typeof LayoutDashboard, number?][] = [
-    ["dashboard", "Dashboard", LayoutDashboard],
-    ["courses", "My Courses", BookOpen, counts.courses],
-    ["study", "Study Plan", CalendarDays],
-    ["inbox", "Curriculum Inbox", ClipboardList, counts.inbox || undefined],
-    ["practice", "Practice", Target],
-    ["practicals", "Practicals", FlaskConical],
-    ["review", "Review", Repeat, counts.reviewsDue || undefined],
-    ["mastery", "Mastery", BarChart3],
-    ["materials", "Materials", Upload],
-    ["ai", "AI Tutor", MessageSquare],
-    ["explorer", "Data Explorer", Library],
-  ];
-
-  const pageTitle = useMemo(() => {
-    const found = navItems.find((n) => n[0] === route.name);
-    return found ? found[1] : "StudyLab";
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route.name]);
-
-  useEffect(() => { document.title = `StudyLab · ${pageTitle}`; }, [pageTitle]);
-
-  if (!bootstrapped || hydrating) {
-    return (
-      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}>
-        <div style={{ textAlign: "center" }}>
-          <div className="brand-mark" style={{ margin: "0 auto 14px", width: 48, height: 48, borderRadius: 14 }}><GraduationCap size={24} /></div>
-          <p className="muted">{hydrating ? "Syncing your workspace…" : "Loading StudyLab…"}</p>
-        </div>
-        <ToastHost />
-      </div>
-    );
-  }
-
-  if (showAuthGate) {
-    return (
-      <>
-        <AuthScreen onContinueDemo={() => setWantDemo(true)} />
-        <ToastHost />
-      </>
-    );
-  }
-
   return (
-    <div className="app-shell">
-      <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
-        <div className="brand">
-          <div className="brand-mark"><GraduationCap size={22} /></div>
-          <div><strong>StudyLab</strong><span>Learn • Practise • Master</span></div>
-          <button className="icon-btn" style={{ marginLeft: "auto", display: "none" }} onClick={() => setSidebarOpen(false)}><X size={18} /></button>
-        </div>
-        <nav>
-          <div className="nav-label">Learning</div>
-          {navItems.map(([id, label, Icon, badge]) => (
-            <button
-              key={id}
-              className={route.name === id ? "nav-item active" : "nav-item"}
-              onClick={() => nav({ name: id } as Route)}
-            >
-              <Icon size={18} /> {label}
-              {badge ? <span className="nav-badge">{badge}</span> : null}
-            </button>
-          ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <button className="mini-card" onClick={() => setSetupOpen("switch")} style={{ textAlign: "left", cursor: "pointer" }}>
-            <Building2 size={18} />
-            <div style={{ minWidth: 0 }}>
-              <strong style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ctx.institution?.short_name ?? "Institution"}</strong>
-              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }}>{ctx.programme?.name ?? "No programme"}</span>
-            </div>
-            <ChevronRight size={15} style={{ marginLeft: "auto", color: "var(--text-mute)" }} />
-          </button>
-          <button className="mini-card" onClick={() => nav({ name: "ai" })} style={{ textAlign: "left", cursor: "pointer" }}>
-            <Sparkles size={18} />
-            <div><strong>AI Tutor</strong><span>Explain • Practise • Review</span></div>
-          </button>
-          <button className="student-mini" onClick={() => nav({ name: "profile" })} style={{ cursor: "pointer" }}>
-            <div className="avatar">{initials(student?.full_name ?? "Student")}</div>
-            <div style={{ minWidth: 0 }}>
-              <strong style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{student?.full_name ?? "Student"}</strong>
-              <span>Year {student?.current_year} · Semester {student?.current_semester}</span>
-            </div>
-          </button>
-        </div>
-      </aside>
-
-      {sidebarOpen && <div onClick={() => setSidebarOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 19 }} />}
-
-      <main className="main">
-        <header className="topbar">
-          <button className="icon-btn mobile-menu" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button>
-          <div className="search">
-            <Search size={17} />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && search.trim()) nav({ name: "courses" });
-              }}
-              placeholder="Search courses, topics..."
-            />
-          </div>
-          <button className="icon-btn" onClick={() => nav({ name: "mastery" })} title="Mastery"><Brain size={19} /></button>
-          <button className="icon-btn" onClick={() => nav({ name: "practicals" })} title="Practicals"><Microscope size={19} /></button>
-          <ModeBadge onSignOut={signedIn ? () => signOut() : undefined} />
-          <button className="icon-btn" onClick={() => nav({ name: "profile" })} title="Profile"><UserCircle size={20} /></button>
-        </header>
-
-        <div className="fade-in" key={route.name + JSON.stringify(route).slice(0, 40)}>
-          {route.name === "dashboard" && <Dashboard nav={nav} />}
-          {route.name === "courses" && <CoursesPage nav={nav} search={search} />}
-          {route.name === "course" && <CoursePage courseId={route.courseId} nav={nav} />}
-          {route.name === "study" && <StudyPlanPage nav={nav} />}
-          {route.name === "inbox" && <InboxPage nav={nav} />}
-          {route.name === "practice" && <PracticePage nav={nav} initialTopicId={route.topicId} />}
-          {route.name === "practicals" && <PracticalListPage nav={nav} />}
-          {route.name === "review" && <ReviewPage nav={nav} />}
-          {route.name === "mastery" && <MasteryPage nav={nav} />}
-          {route.name === "materials" && <MaterialsPage nav={nav} />}
-          {route.name === "ai" && <AITutorPage nav={nav} conversationId={route.conversationId} topicId={route.topicId} courseId={route.courseId} />}
-          {route.name === "profile" && <ProfilePage nav={nav} />}
-          {route.name === "explorer" && <DataExplorerPage />}
-        </div>
-      </main>
-      <ToastHost />
-      <SetupModal open={!!setupOpen} mode={setupOpen ?? "setup"} onClose={() => setSetupOpen(null)} />
-    </div>
+    <AuthProvider>
+      <Gate />
+    </AuthProvider>
   );
 }
 
-function useCounts() {
-  return useStore((db) => {
-    const sid = store.studentId;
-    const now = Date.now();
-    return {
-      courses: db.courses.length,
-      inbox: db.topics.filter((t) => t.status === "student_added").length,
-      reviewsDue: db.review_schedule.filter(
-        (r) => r.student_id === sid && r.status === "scheduled" && new Date(r.scheduled_for).getTime() <= now + 86400000
-      ).length,
-    };
-  });
+function Gate() {
+  const { state } = useAuth();
+  switch (state.status) {
+    case "unconfigured":
+      return <Shell>{<SetupPage />}</Shell>;
+    case "loading":
+      return (
+        <div className="auth-wrap">
+          <Spinner label="Loading StudyLab…" />
+        </div>
+      );
+    case "signed_out":
+      return <AuthPage />;
+    case "onboarding":
+      return <OnboardingPage />;
+    case "ready":
+      return (
+        <Shell>
+          <Routed />
+        </Shell>
+      );
+  }
+}
+
+function Routed() {
+  const route = useRoute();
+  const { state } = useAuth();
+  const profile = state.status === "ready" ? state.profile : null;
+
+  const coursesQ = useQuery(
+    () => (profile?.programme_id ? api.getCourses(profile.programme_id) : Promise.resolve([])),
+    [profile?.programme_id],
+  );
+
+  const page = useMemo(() => {
+    let m: Record<string, string> | null;
+
+    if (route.path === "/" || route.path === "") return <Dashboard />;
+    if (route.path === "/courses") return <CoursesPage />;
+    if (route.path === "/materials") return <MaterialsPage />;
+    if (route.path === "/map") return <KnowledgeMapPage />;
+    if (route.path === "/tutor") return <TutorPage />;
+
+    if ((m = matchPath("/courses/:id", route.path))) {
+      const course = (coursesQ.data ?? []).find((c) => c.id === m!.id);
+      if (course) return <CourseWorkspace course={course} />;
+      return <CoursesPage />;
+    }
+    if ((m = matchPath("/topics/:id", route.path))) {
+      return <TopicLoader topicId={m.id} />;
+    }
+    if ((m = matchPath("/session/:id", route.path))) {
+      return <SessionRunner sessionId={m.id} />;
+    }
+    return <Dashboard />;
+  }, [route.path, coursesQ.data]);
+
+  return <>{page}</>;
+}
+
+function TopicLoader({ topicId }: { topicId: string }) {
+  const topicQ = useQuery(() => api.getTopic(topicId), [topicId]);
+  const { state } = useAuth();
+  const profile = state.status === "ready" ? state.profile : null;
+  const allCoursesQ = useQuery(
+    () => (profile?.programme_id ? api.getCourses(profile.programme_id) : Promise.resolve([])),
+    [profile?.programme_id],
+  );
+  if (topicQ.loading || allCoursesQ.loading)
+    return (
+      <div className="page">
+        <Spinner label="Loading topic…" />
+      </div>
+    );
+  const topic = topicQ.data;
+  if (!topic)
+    return (
+      <div className="page">
+        <p className="muted">Topic not found. It may have been archived.</p>
+        <Link to="/courses" className="text-btn">
+          Back to courses
+        </Link>
+      </div>
+    );
+  const course = (allCoursesQ.data ?? []).find((c) => c.id === topic.course_id);
+  return <TopicDetail topic={topic} course={course} />;
+}
+
+function Shell({ children }: { children: React.ReactNode }) {
+  const { state, signOut } = useAuth();
+  const route = useRoute();
+  const profile = state.status === "ready" ? state.profile : null;
+  const user = state.status === "ready" ? state.user : null;
+
+  const nav = [
+    ["/", "Dashboard", LayoutDashboard],
+    ["/courses", "My Courses", BookOpen],
+    ["/materials", "Course Material", ClipboardList],
+    ["/map", "Knowledge Map", Network],
+    ["/tutor", "AI Tutor", Brain],
+  ] as const;
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-mark">
+            <GraduationCap size={22} />
+          </div>
+          <div>
+            <strong>StudyLab</strong>
+            <span>Learn • Practise • Master</span>
+          </div>
+        </div>
+        <nav>
+          {nav.map(([to, label, Icon]) => {
+            const active = to === "/" ? route.path === "/" : route.path.startsWith(to);
+            return (
+              <Link key={to} to={to} className={active ? "nav-item active" : "nav-item"}>
+                <Icon size={18} /> {label}
+              </Link>
+            );
+          })}
+        </nav>
+        <div className="sidebar-bottom">
+          <div className="mini-card">
+            <Brain size={18} />
+            <div>
+              <strong>AI Tutor</strong>
+              <span>Scaffolds, never spoils</span>
+            </div>
+          </div>
+          {user && (
+            <div className="student-mini">
+              <div className="avatar">{(profile?.full_name ?? user.email)[0]?.toUpperCase()}</div>
+              <div>
+                <strong>{profile?.full_name ?? user.email}</strong>
+                <span>BSc Natural & Applied Science</span>
+              </div>
+              <button className="signout" onClick={() => void signOut()} title="Sign out">
+                <LogOut size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+      </aside>
+
+      <main className="main">
+        <header className="topbar">
+          <button className="mobile-menu" aria-label="Menu">
+            <Menu size={20} />
+          </button>
+          <div className="search">
+            <Search size={17} />
+            <input placeholder="Coming soon: search topics, questions and resources" disabled />
+          </div>
+          <Link to="/tutor" className="icon-btn" title="AI Tutor">
+            <Brain size={19} />
+          </Link>
+        </header>
+        {children}
+      </main>
+    </div>
+  );
 }
