@@ -1312,6 +1312,8 @@ export async function getExtractedItems(materialId: string): Promise<ExtractedIt
       .order("source_page", { nullsFirst: true })
       .then((r) => check(r, [] as ExtractedItem[]));
   }
+  const store = getLocalStore();
+  const material = store.uploadedMaterials.find((m) => m.id === materialId);
   return [
     {
       id: `ext-1-${materialId}`,
@@ -1323,6 +1325,8 @@ export async function getExtractedItems(materialId: string): Promise<ExtractedIt
       confidence: 0.95,
       concept_id: "c-lim-1",
       question_id: null,
+      source_document_name: material?.file_name ?? null,
+      source_material_name: material?.file_name ?? null,
     },
   ];
 }
