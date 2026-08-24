@@ -11,3 +11,6 @@ supabase/.temp/
 .vscode/*
 !.vscode/extensions.json
 *.log
+
+# local embedded-postgres verification data
+.local-pg/

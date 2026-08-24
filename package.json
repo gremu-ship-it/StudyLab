@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "db:verify": "node scripts/local-db.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0",
@@ -18,8 +21,10 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "embedded-postgres": "^18.4.0-beta.17",
     "typescript": "^5.7.2",
-    "vite": "^6.0.5"
+    "vite": "^6.0.5",
+    "vitest": "^4.1.11"
   },
   "allowScripts": {
     "esbuild@0.25.12": true

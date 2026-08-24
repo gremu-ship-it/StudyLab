@@ -1,0 +1,17 @@
+# StudyLab Supabase project configuration.
+# Apply migrations:   supabase db push   (or run `npm run db:verify` locally first)
+# Deploy edge fns:    supabase functions deploy ai-tutor
+#                     supabase functions deploy process-material
+# Secrets:            supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+#                     (or OPENAI_API_KEY — the ai-tutor function picks the first that exists)
+#
+# project_id is left blank on purpose: fill it in locally (this file is
+# committed, secrets are not).
+
+project_id = "studylab"
+
+[functions.ai-tutor]
+verify_jwt = true
+
+[functions.process-material]
+verify_jwt = true
