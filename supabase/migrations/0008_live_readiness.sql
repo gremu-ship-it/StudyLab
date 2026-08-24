@@ -1,5 +1,16 @@
--- StudyLab 0002 — live readiness for the expanded app.
--- Apply AFTER 0001_studylab_v0_1.sql.
+-- StudyLab 0008 — live readiness (merged with v0.2)
+-- Apply AFTER 0007_own_draft_visibility.sql (i.e. after the full v0.2
+-- migration set 0001-0007).
+--
+-- Merge notes:
+-- * The topics/units/questions authoring policies this file used to
+--   create are already owned by 0002 (and the questions read rule by
+--   0007), so they are intentionally NOT re-created here.
+-- * The `add column if not exists` statements below are idempotent
+--   no-ops for columns v0.2 already added (e.g. learning_units.body).
+-- * This file's practicals/steps/options/resources policies are new
+--   and fill gaps v0.2 did not cover (e.g. topic_resources had no
+--   insert policy, so linking resources to topics needed this).
 
 -- ---------------------------------------------------------------
 -- 1.  Add columns introduced by the current app that were not in
@@ -28,31 +39,18 @@ alter table public.skills                add column if not exists created_by uui
 alter table public.content_resources     add column if not exists created_by uuid references auth.users(id) on delete set null;
 
 -- ---------------------------------------------------------------
--- 2.  RLS: students may create/update/delete their OWN authored
---     curriculum content.  Approved/shared content stays readable.
+-- 2.  RLS additions that v0.2 does not already provide.
+--     (Topics/units/questions authoring rules live in 0002; the
+--     questions "approved or own" read rule lives in 0007.)
 -- ---------------------------------------------------------------
-create policy "students insert own topics"    on public.topics    for insert to authenticated with check (created_by = auth.uid());
-create policy "students update own topics"    on public.topics    for update to authenticated using (created_by = auth.uid()) with check (created_by = auth.uid());
-create policy "students delete own topics"    on public.topics    for delete to authenticated using (created_by = auth.uid());
 
 create policy "students insert own subtopics" on public.subtopics for insert to authenticated with check (created_by = auth.uid());
 create policy "students manage own subtopics" on public.subtopics for update to authenticated using (created_by = auth.uid()) with check (created_by = auth.uid());
 create policy "students delete own subtopics" on public.subtopics for delete to authenticated using (created_by = auth.uid());
 
-create policy "students insert own units"     on public.learning_units for insert to authenticated with check (created_by = auth.uid());
-create policy "students manage own units"     on public.learning_units for update to authenticated using (created_by = auth.uid()) with check (created_by = auth.uid());
-create policy "students delete own units"     on public.learning_units for delete to authenticated using (created_by = auth.uid());
 -- Students can read all approved units plus their own drafts.
 drop policy if exists "authenticated read learning units" on public.learning_units;
 create policy "authenticated read learning units" on public.learning_units
-  for select to authenticated using (status = 'approved' or created_by = auth.uid());
-
-create policy "students insert own questions" on public.questions for insert to authenticated with check (created_by = auth.uid());
-create policy "students manage own questions" on public.questions for update to authenticated using (created_by = auth.uid()) with check (created_by = auth.uid());
-create policy "students delete own questions" on public.questions for delete to authenticated using (created_by = auth.uid());
--- Students can read approved questions plus their own (drafts/review).
-drop policy if exists "authenticated read approved questions" on public.questions;
-create policy "authenticated read approved questions" on public.questions
   for select to authenticated using (status = 'approved' or created_by = auth.uid());
 
 create policy "students insert own options"   on public.question_options for insert to authenticated with check (created_by = auth.uid());
